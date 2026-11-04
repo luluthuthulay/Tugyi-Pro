@@ -48,6 +48,7 @@ import io.nekohasekai.sagernet.ktx.onMainDispatcher
 import io.nekohasekai.sagernet.ktx.parseProxies
 import io.nekohasekai.sagernet.ktx.readableMessage
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
+import io.nekohasekai.sagernet.tugyi.TugyiHomeFragment
 import moe.matsuri.nb4a.utils.Util
 
 class MainActivity : ThemedActivity(),
@@ -76,7 +77,10 @@ class MainActivity : ThemedActivity(),
         navigation.setNavigationItemSelectedListener(this)
 
         if (savedInstanceState == null) {
-            displayFragmentWithId(R.id.nav_configuration)
+            // Tugyi Pro home: ONLY SG, JP, US. The old node-list
+            // ConfigurationFragment is kept in code, but is no longer
+            // the home screen.
+            displayFragment(TugyiHomeFragment())
         }
         onBackPressedDispatcher.addCallback {
             if (supportFragmentManager.findFragmentById(R.id.fragment_holder) is ConfigurationFragment) {
@@ -317,6 +321,11 @@ class MainActivity : ThemedActivity(),
         if (fragment is ConfigurationFragment) {
             binding.stats.allowShow = true
             binding.fab.show()
+        } else if (fragment is TugyiHomeFragment) {
+            // Tugyi home has no separate Connect button: tap a country
+            // connects immediately, so hide the old FAB here.
+            binding.stats.allowShow = true
+            binding.fab.hide()
         } else if (!DataStore.showBottomBar) {
             binding.stats.allowShow = false
             binding.stats.performHide()
@@ -331,7 +340,7 @@ class MainActivity : ThemedActivity(),
     fun displayFragmentWithId(@IdRes id: Int): Boolean {
         when (id) {
             R.id.nav_configuration -> {
-                displayFragment(ConfigurationFragment())
+                displayFragment(TugyiHomeFragment())
             }
 
             R.id.nav_group -> displayFragment(GroupFragment())
