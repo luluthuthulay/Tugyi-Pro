@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
 """
-Tugyi Pro engine v1.
+Tugyi Pro engine v2.
 
-Fetch the Au1rxx by-country v2ray files for SG, JP, US, dedupe by
-server+port+protocol, live-test each candidate with sing-box
-(HTTP-over-proxy to http://www.gstatic.com/generate_204, 2 rounds),
-keep only nodes with >=50% success, rank by median latency, and write
-the top 10 per country to output/<country>.txt in the original
-subscription-URI form (so NekoBox / sing-box clients can import them
-directly, with no re-encoding).
+Sources per country (all verified live on 2026-11-04, pushed that day):
+- Au1rxx by-country files (base64, country-specific, SG 216 / JP 148 /
+  US 694 at check time).
+- 0xRadikal/Free-v2ray-Configs Countries files (plain text, updated
+  every 15 minutes, SG 71 / JP 26 / US 288 at check time).
+- Global lists, filtered by node display name to that country only:
+  NodesRadar v2ray.txt, FastNodes verified.txt, ZorVPN-nodes.txt,
+  Pawdroid English sub (US only in practice).
+Global lists whose nodes carry no country name (for example
+free-nodes/v2rayfree, mostly "unknown") are NOT used, because an
+unknown-country node must never be put into an SG/JP/US list.
+
+Dedupe, live-test, ranking and output are as in v1: sing-box
+HTTP-over-proxy to http://www.gstatic.com/generate_204, 2 rounds,
+>=50% success, median ms ranking, top 10 per country to
+output/<country>.txt in original URI form.
 
 Limits, stated plainly:
 - At most MAX_TEST nodes per country per run, in source order, so a
-  scheduled run stays within GitHub Actions time limits. US has 694
-  source nodes, so a single run does NOT test every US node; the next
-  run starts from the same source order, so coverage is best-effort.
+  scheduled run stays within GitHub Actions time limits.
 - A node that cannot be translated to a sing-box outbound is skipped,
   not counted as live or dead.
 - "Live" here means live from the GitHub runner (US/EU), NOT from
@@ -34,10 +41,51 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 SOURCES = {
-    "sg": "https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-SG.txt",
-    "jp": "https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-JP.txt",
-    "us": "https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-US.txt",
+    # (url, already_country_specific)
+    "sg": [
+        ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-SG.txt", True),
+        ("https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Singapore.txt", True),
+        ("https://radarhub.top/v2ray.txt", False),
+        ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
+        ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
+    ],
+    "jp": [
+        ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-JP.txt", True),
+        ("https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Japan.txt", True),
+        ("https://radarhub.top/v2ray.txt", False),
+        ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
+        ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
+    ],
+    "us": [
+        ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-US.txt", True),
+        ("https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/United_States.txt", True),
+        ("https://radarhub.top/v2ray.txt", False),
+        ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
+        ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
+        ("https://raw.githubusercontent.com/Pawdroid/Free-servers/main/static/sub_en", False),
+    ],
 }
+
+COUNTRY_KEYWORDS = {
+    "sg": ["singapore", "🇸🇬", "新加坡"],
+    "jp": ["japan", "🇯🇵", "日本", "tokyo", "osaka"],
+    "us": ["united states", "🇺🇸", "美国", "usa"],
+}
+
+
+def node_country_name(uri):
+    """Display name from the URI fragment, URL-decoded, lowercased.
+    unquote_plus is needed because some lists encode spaces as '+'."""
+    if "#" not in uri:
+        return ""
+    return urllib.parse.unquote_plus(uri.split("#", 1)[1]).lower()
+
+
+def matches_country(uri, code):
+    name = node_country_name(uri)
+    if not name:
+        return False
+    return any(kw in name for kw in COUNTRY_KEYWORDS[code])
 TEST_URL = "http://www.gstatic.com/generate_204"
 MAX_TEST = int(os.environ.get("TUGYI_MAX_TEST", "100"))
 TOP_N = int(os.environ.get("TUGYI_TOP_N", "10"))
@@ -56,10 +104,12 @@ def decode_subscription(text):
     try:
         decoded = base64.b64decode(text).decode(errors="ignore")
         if "://" in decoded:
-            return [l.strip() for l in decoded.splitlines() if l.strip()]
+            return [l.strip() for l in decoded.splitlines()
+                    if l.strip() and not l.strip().startswith("#") and "://" in l]
     except Exception:
         pass
-    return [l.strip() for l in text.splitlines() if l.strip()]
+    return [l.strip() for l in text.splitlines()
+            if l.strip() and not l.strip().startswith("#") and "://" in l]
 
 
 def b64decode_padded(s):
@@ -241,20 +291,30 @@ def probe(uri, port):
     return "live", statistics.median(times)
 
 
-def run_country(code, url):
-    print(f"[{code}] fetching {url}", flush=True)
-    raw = fetch_text(url)
-    lines = decode_subscription(raw)
+def run_country(code):
     seen = set()
     unique = []
-    for line in lines:
-        key = node_key(line)
-        if key is None or key in seen:
+    for url, already_specific in SOURCES[code]:
+        try:
+            print(f"[{code}] fetching {url}", flush=True)
+            raw = fetch_text(url)
+            lines = decode_subscription(raw)
+        except Exception as e:
+            print(f"[{code}] source failed, skipping: {url} ({e})", flush=True)
             continue
-        seen.add(key)
-        unique.append(line)
+        kept = 0
+        for line in lines:
+            if not already_specific and not matches_country(line, code):
+                continue
+            key = node_key(line)
+            if key is None or key in seen:
+                continue
+            seen.add(key)
+            unique.append(line)
+            kept += 1
+        print(f"[{code}] {url} -> {len(lines)} lines, {kept} kept", flush=True)
     candidates = unique[:MAX_TEST]
-    print(f"[{code}] source={len(lines)} unique={len(unique)} testing={len(candidates)}", flush=True)
+    print(f"[{code}] unique={len(unique)} testing={len(candidates)}", flush=True)
 
     results = []
     skipped = 0
@@ -277,9 +337,9 @@ def run_country(code, url):
 
 def main():
     os.makedirs("output", exist_ok=True)
-    for code, url in SOURCES.items():
+    for code in SOURCES:
         try:
-            top = run_country(code, url)
+            top = run_country(code)
         except Exception as e:
             print(f"[{code}] FAILED, keeping previous output: {e}", flush=True)
             continue
