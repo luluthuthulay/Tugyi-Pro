@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tugyi Pro engine v2.
+Tugyi Pro engine v3 (SS 19999 priority, per Hsu phone test 2026-11-04).
 
 Sources per country (all verified live on 2026-11-04, pushed that day):
 - Au1rxx by-country files (base64, country-specific, SG 216 / JP 148 /
@@ -48,6 +48,7 @@ SOURCES = {
         ("https://radarhub.top/v2ray.txt", False),
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
+        ("https://gist.githubusercontent.com/cybershieldvpn/d7981da88de440c4ef8ee9271b32eb6f/raw/cybershieldvpn", False),
     ],
     "jp": [
         ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-JP.txt", True),
@@ -55,6 +56,7 @@ SOURCES = {
         ("https://radarhub.top/v2ray.txt", False),
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
+        ("https://gist.githubusercontent.com/cybershieldvpn/d7981da88de440c4ef8ee9271b32eb6f/raw/cybershieldvpn", False),
     ],
     "us": [
         ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-US.txt", True),
@@ -63,8 +65,39 @@ SOURCES = {
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
         ("https://raw.githubusercontent.com/Pawdroid/Free-servers/main/static/sub_en", False),
+        ("https://gist.githubusercontent.com/cybershieldvpn/d7981da88de440c4ef8ee9271b32eb6f/raw/cybershieldvpn", False),
     ],
 }
+
+# Phone-verified pattern 2026-11-04 (Hsu, Myanmar network):
+# Shadowsocks aes-256-gcm port 19999 nodes connect, while plain
+# VMess port 18000 and SS rc4-md5 port 8080 do not. So these nodes
+# are tested first and ranked first in the output, ahead of ms order.
+# GitHub-runner ms alone does not prove Myanmar connectivity.
+
+
+def is_ss_19999(uri):
+    """True for ss:// nodes with method aes-256-gcm and port 19999.
+    SS userinfo may be plain method:password or base64(method:password)."""
+    try:
+        if not uri.startswith("ss://"):
+            return False
+        rest = uri[5:].split("#", 1)[0]
+        if "@" not in rest:
+            return False
+        userinfo, hostport = rest.rsplit("@", 1)
+        if ":" not in hostport or hostport.rsplit(":", 1)[1] != "19999":
+            return False
+        method = userinfo.split(":", 1)[0]
+        if method == "aes-256-gcm":
+            return True
+        try:
+            decoded = b64decode_padded(userinfo).decode(errors="ignore")
+            return decoded.split(":", 1)[0] == "aes-256-gcm"
+        except Exception:
+            return False
+    except Exception:
+        return False
 
 COUNTRY_KEYWORDS = {
     "sg": ["singapore", "🇸🇬", "新加坡"],
@@ -313,7 +346,12 @@ def run_country(code):
             unique.append(line)
             kept += 1
         print(f"[{code}] {url} -> {len(lines)} lines, {kept} kept", flush=True)
-    candidates = unique[:MAX_TEST]
+    # SS 19999 nodes are tested first, otherwise they sit at the end
+    # of a 1000+ node list and never reach MAX_TEST.
+    ss19999 = [u for u in unique if is_ss_19999(u)]
+    ordered = ss19999 + [u for u in unique if not is_ss_19999(u)]
+    print(f"[{code}] ss19999={len(ss19999)} unique={len(unique)}", flush=True)
+    candidates = ordered[:MAX_TEST]
     print(f"[{code}] unique={len(unique)} testing={len(candidates)}", flush=True)
 
     results = []
@@ -329,7 +367,9 @@ def run_country(code):
                 skipped += 1
             elif status == "live":
                 results.append((ms, uri))
-    results.sort(key=lambda x: x[0])
+    # Rank SS 19999 live nodes first (phone-proven in Myanmar),
+    # then the rest by ms.
+    results.sort(key=lambda x: (0 if is_ss_19999(x[1]) else 1, x[0]))
     print(f"[{code}] live={len(results)} skipped={skipped} "
           f"best={results[0][0]:.0f}ms" if results else f"[{code}] live=0 skipped={skipped}", flush=True)
     return [uri for _ms, uri in results[:TOP_N]]
