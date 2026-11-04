@@ -386,9 +386,14 @@ def main():
         if not top:
             print(f"[{code}] no live nodes, keeping previous output", flush=True)
             continue
+        # Write base64-encoded subscription, the standard v2ray format
+        # used by Au1rxx and CyberShield. Plain lines FAIL in v2rayNG
+        # on Hsu's phone (empty list + Failure, 2026-11-04 23:49),
+        # while base64 imports fine there and also works in NekoBox.
+        encoded = base64.b64encode(("\n".join(top) + "\n").encode()).decode()
         with open(f"output/{code}.txt", "w") as f:
-            f.write("\n".join(top) + "\n")
-        print(f"[{code}] wrote output/{code}.txt with {len(top)} nodes", flush=True)
+            f.write(encoded + "\n")
+        print(f"[{code}] wrote output/{code}.txt with {len(top)} nodes (base64)", flush=True)
 
 
 if __name__ == "__main__":
