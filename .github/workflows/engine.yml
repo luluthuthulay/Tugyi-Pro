@@ -1,0 +1,48 @@
+name: Tugyi Engine
+
+# Publish SG / JP / US live node lists for the Tugyi Pro app.
+# Runs every 6 hours and on manual dispatch. A run never overwrites a
+# previous output file with an empty or failed result.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install sing-box
+        run: |
+          curl -sL -o /tmp/sing-box.tar.gz https://github.com/SagerNet/sing-box/releases/download/v1.11.0/sing-box-1.11.0-linux-amd64.tar.gz
+          tar -xzf /tmp/sing-box.tar.gz -C /tmp
+          cp /tmp/sing-box-1.11.0-linux-amd64/sing-box ./sing-box
+          chmod +x ./sing-box
+          ./sing-box version
+
+      - name: Run engine
+        env:
+          SING_BOX: ./sing-box
+          TUGYI_MAX_TEST: "100"
+          TUGYI_TOP_N: "10"
+          TUGYI_WORKERS: "10"
+        run: python3 engine/test_nodes.py
+
+      - name: Commit output if changed
+        run: |
+          git config user.name "tugyi-engine"
+          git config user.email "tugyi-engine@users.noreply.github.com"
+          git add output/sg.txt output/jp.txt output/us.txt
+          if git diff --cached --quiet; then
+            echo "No change, nothing to commit."
+          else
+            git commit -m "Tugyi engine: update SG/JP/US live lists"
+            git push
+          fi
