@@ -60,6 +60,11 @@ jobs:
         with:
           path: ~/.gradle
           key: gradle-oss-${{ hashFiles('**/*.gradle.kts') }}
+      - name: Restore Tugyi keystore
+        # Tugyi keystore is NOT committed to the repo (anyone with it
+        # could sign as Tugyi Pro). It lives in the KEYSTORE_B64 secret.
+        run: |
+          echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > release.keystore
       - name: Gradle Build
         env:
           BUILD_PLUGIN: none
