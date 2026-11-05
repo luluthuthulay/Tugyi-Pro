@@ -1,16 +1,46 @@
 #!/usr/bin/env python3
 """
-Tugyi Pro engine v6 (phone-proven pattern filter, per Hsu phone tests 2026-11-05).
+Tugyi Pro engine v7 (phone-proven pattern filter, per Hsu phone tests 2026-11-05).
+
+v7 changes (2026-11-05, Hsu: "add it into my engine"):
+- YLT source ADDED: the provider Ye Lin Tun gives his Weather
+  Widget key free himself (Hsu 2026-11-05 22:45 - the earlier
+  "PAID" label was wrong) and posts the download link publicly in
+  his Facebook post (14th upgrade, Tazaungdaing). The link is a
+  Google Docs download (uc?export=download) of the same base64
+  subscription Hsu sent (17 Hy2 nodes, expires 2026-12-05).
+  It is added as a source for SG and HK. After the key expires
+  (2026-12-05) this source will go stale; the engine keeps the
+  last good output on fetch failure, as always.
+- Hostname-region matching: YLT node display names carry no
+  country word, so they are matched by their host subdomain
+  instead (sg7 -> SG, hk3 -> HK; nw4 is still unidentified and
+  is skipped). Any source whose hosts carry a region code works
+  the same way.
+- Hy2 probe: when a Hy2 node has no explicit sni param, the
+  sing-box outbound now sets server_name to the server hostname
+  explicitly (same as what the phone does), instead of leaving
+  it unset.
+- Trusted families: YLT joins CyberShield as a trusted family.
+  Both are phone-proven from Myanmar as families, and the GitHub
+  probe cannot judge Myanmar connectivity, so their nodes are
+  kept even when the probe fails them and rank FIRST within
+  their tier (the app's in-app ping check then ranks them and
+  drops any n/a). Blocklist still applies.
+- Guarantee: at least one YLT node in each country's top 10
+  whenever any YLT candidate exists for it. Without this, a
+  run where 10 VLESS nodes pass the GitHub probe would crowd
+  the phone-proven YLT Hy2 nodes out of sg.txt entirely, even
+  though GitHub-live VLESS nodes have repeatedly turned out
+  Myanmar-dead while YLT connects from Myanmar. (CyberShield
+  being present does not count for this guarantee - Hsu asked
+  for YLT specifically.)
 
 v6 changes (2026-11-05, Hsu's YLT notes file, 17 Hysteria2 nodes):
 - New region HK (Hong Kong): the YLT subscription Hsu sent has 4 HK
   Hy2 nodes that work from Myanmar; HK is near Myanmar like SG/JP.
   Sources: Au1rxx by-country HK + Radikal Hong_Kong (both verified
   live 2026-11-05) + the usual global lists filtered by HK keywords.
-  The YLT nodes themselves are Hsu's PAID subscription (per-node
-  UUIDs, traffic accounting, expires 2026-12-05) and are NEVER added
-  here - only their PATTERN is used, and hk.txt comes from public
-  sources only. The YLT file stays private in ~/workspace/ylt-notes/.
 - Hy2 rule relaxed: YLT Hy2 nodes carry NO explicit sni param, yet
   connect from Myanmar - sing-box uses the server hostname as SNI.
   So Hy2 now also passes when the host is a real domain (SNI
@@ -55,11 +85,19 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+# YLT Weather Widget key, free from the provider himself (Hsu
+# 2026-11-05 22:45; Hsu asked to add it to the engine 22:56).
+# Public Google Docs download link from his Facebook post
+# (14th upgrade, Tazaungdaing, 2026-11-05). Base64 subscription,
+# 17 Hysteria2 nodes, expires 2026-12-05.
+YLT_URL = "https://docs.google.com/uc?export=download&id=1PDrkJx2boCgnxjahRjax_hqwi5D8eE8K"
+
 SOURCES = {
     # (url, already_country_specific)
     "sg": [
         ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-SG.txt", True),
         ("https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Singapore.txt", True),
+        (YLT_URL, False),
         ("https://radarhub.top/v2ray.txt", False),
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
@@ -85,6 +123,7 @@ SOURCES = {
     "hk": [
         ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-HK.txt", True),
         ("https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Hong_Kong.txt", True),
+        (YLT_URL, False),
         ("https://radarhub.top/v2ray.txt", False),
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
@@ -233,7 +272,31 @@ def node_country_name(uri):
     return urllib.parse.unquote_plus(uri.split("#", 1)[1]).lower()
 
 
+# Host subdomains that carry a region code (YLT hosts look like
+# <uuid>-<group>.sg7.hyhuawel.com). nw4 is NOT listed: its region
+# is still unidentified (Hsu was asked), so nw4 nodes are skipped.
+HOST_REGION = {
+    "sg7": "sg",
+    "hk3": "hk",
+}
+
+
+def host_region(uri):
+    """Region from the server hostname's region-code subdomain,
+    or None. Used when the display name carries no country word."""
+    try:
+        host = (urllib.parse.urlparse(uri).hostname or "").lower()
+    except Exception:
+        return None
+    for key, code in HOST_REGION.items():
+        if f".{key}." in host:
+            return code
+    return None
+
+
 def matches_country(uri, code):
+    if host_region(uri) == code:
+        return True
     name = node_country_name(uri)
     if not name:
         return False
@@ -416,6 +479,10 @@ def to_outbound(uri):
         sni = query.get("sni", [""])[0]
         if sni and sni != "off":
             tls["server_name"] = sni
+        else:
+            # No explicit sni: SNI defaults to the server hostname,
+            # same as the phone does (YLT Hy2 nodes rely on this).
+            tls["server_name"] = parsed.hostname
         if query.get("insecure", [""])[0] == "1":
             tls["insecure"] = True
         out = {"type": "hysteria2", "server": parsed.hostname, "server_port": parsed.port,
@@ -522,16 +589,18 @@ def run_country(code):
             unique.append((line, url))
             kept += 1
         print(f"[{code}] {url} -> {len(lines)} lines, {kept} pattern-kept", flush=True)
-    # CyberShield gist nodes are phone-proven from Myanmar as a family
-    # (Hsu: SS19999 connects, SG VLESS Reality matches the proven
-    # pattern), but the GitHub probe cannot judge Myanmar connectivity
-    # - a CyberShield SG node passes this filter yet fails the probe,
-    # while GitHub-live nodes turn out Myanmar-dead (2026-11-05: all
-    # 10 SG nodes GitHub-live, all Myanmar-dead). So a CyberShield
-    # node is kept even when the probe fails it; within its tier it
-    # ranks FIRST (family phone-proven beats GitHub-only ms), and the
-    # app's own in-app ping check then ranks it and drops any n/a,
-    # as Hsu instructed. Blocklist still applies (see above).
+    # Trusted families (CyberShield gist, YLT key) are phone-proven
+    # from Myanmar as families (Hsu: SS19999 connects, SG VLESS
+    # Reality matches the proven pattern; YLT Hy2 "exactly right
+    # for Myanmar"), but the GitHub probe cannot judge Myanmar
+    # connectivity - a CyberShield SG node passes this filter yet
+    # fails the probe, while GitHub-live nodes turn out Myanmar-dead
+    # (2026-11-05: all 10 SG nodes GitHub-live, all Myanmar-dead).
+    # So a trusted-family node is kept even when the probe fails it;
+    # within its tier it ranks FIRST (family phone-proven beats
+    # GitHub-only ms), and the app's own in-app ping check then ranks
+    # it and drops any n/a, as Hsu instructed. Blocklist still
+    # applies (see above).
     # Test pattern-proven nodes in tier order (VLESS Reality, then
     # Hysteria2, then CyberShield SS19999), otherwise the best tier
     # sits past MAX_TEST in a 1000+ node list.
@@ -561,23 +630,48 @@ def run_country(code):
     # or line quality.
     src_by_uri = {u: src for u, src in unique}
     live_uris = {uri for _ms, uri in results}
-    cyber_dead = [(None, uri) for uri in candidates
-                  if uri not in live_uris
-                  and "cybershield" in src_by_uri.get(uri, "").lower()]
-    combined = results + cyber_dead
+    trusted_dead = [(None, uri) for uri in candidates
+                    if uri not in live_uris
+                    and is_trusted_family(src_by_uri.get(uri, ""))]
+    combined = results + trusted_dead
 
     def order_key(item):
         ms, uri = item
         src = src_by_uri.get(uri, "")
         return (pattern_tier(uri, src, code),
-                0 if "cybershield" in src.lower() else 1,
+                0 if is_trusted_family(src) else 1,
                 ms if ms is not None else float("inf"))
 
     combined.sort(key=order_key)
     out = [uri for _ms, uri in combined]
     print(f"[{code}] output={len(out)} (live={len(results)} "
-          f"+ cybershield-kept={len(cyber_dead)})", flush=True)
-    return out[:TOP_N]
+          f"+ trusted-kept={len(trusted_dead)})", flush=True)
+    top = out[:TOP_N]
+    # Guarantee at least one YLT node per list when any YLT
+    # candidate exists for this country (see v7 docstring).
+    # Without this, a run where 10 VLESS nodes pass the GitHub
+    # probe crowds the phone-proven YLT nodes out entirely.
+    # CyberShield being present does not count - Hsu asked for
+    # YLT specifically.
+    if top and not any(src_by_uri.get(u, "") == YLT_URL for u in top):
+        ylt_rest = [u for u in out[TOP_N:]
+                    if src_by_uri.get(u, "") == YLT_URL]
+        if ylt_rest:
+            top[-1] = ylt_rest[0]
+            print(f"[{code}] YLT guarantee: swapped in "
+                  f"{ylt_rest[0][:40]}", flush=True)
+    return top
+
+
+def is_trusted_family(source_url):
+    """True for sources whose node family is phone-proven from
+    Myanmar (CyberShield gist, YLT key). Their nodes are kept
+    even when the GitHub probe fails them and rank first within
+    their tier (see run_country)."""
+    src = (source_url or "").lower()
+    if "cybershield" in src:
+        return True
+    return source_url == YLT_URL
 
 
 def main():
