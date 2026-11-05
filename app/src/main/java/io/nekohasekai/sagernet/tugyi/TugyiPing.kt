@@ -56,8 +56,11 @@ object TugyiPing {
     private const val KEY_PING_PREFIX = "ping_"
     private const val KEY_PING_TIME_PREFIX = "ping_time_"
 
-    /** Re-test at most every 5 minutes per country. */
-    private const val MIN_RETEST_MS = 5 * 60 * 1000L
+    /** Re-test at most every 30 minutes per country (Hsu, 2026-11-05).
+     * Nodes do not change that fast (GitHub engine publishes every
+     * 6 hours), so testing more often only wastes battery and data.
+     * A new list is still tested immediately (force = true). */
+    private const val MIN_RETEST_MS = 30 * 60 * 1000L
 
     private val testing = mutableSetOf<String>()
 
