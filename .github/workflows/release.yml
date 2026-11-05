@@ -1,4 +1,9 @@
 name: Release Build
+# Tugyi fix 2026-11-05: GITHUB_TOKEN defaults to contents: read in this
+# repo, so the Publish Release job (ghr) got 403 creating v1.0.0.
+# Give this workflow write access to contents so it can create releases.
+permissions:
+  contents: write
 on:
   workflow_dispatch:
     inputs:
