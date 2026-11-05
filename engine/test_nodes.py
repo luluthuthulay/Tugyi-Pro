@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tugyi Pro engine v3 (SS 19999 priority, per Hsu phone test 2026-11-04).
+Tugyi Pro engine v4 (phone-proven pattern filter, per Hsu phone tests 2026-11-05).
 
 Sources per country (all verified live on 2026-11-04, pushed that day):
 - Au1rxx by-country files (base64, country-specific, SG 216 / JP 148 /
@@ -98,6 +98,90 @@ def is_ss_19999(uri):
             return False
     except Exception:
         return False
+
+# Phone-proven working pattern, Hsu 2026-11-05 (Happ app, Myanmar network).
+# SG working file (14 nodes, all connect): VLESS/TCP/Reality, flow
+# xtls-rprx-vision, real SNI (apple/yandex/icloud), real browser fp
+# (chrome/safari/firefox/ios, never none). Port, SNI brand, fp brand
+# and source do NOT decide connection - the 3-part pattern does.
+# JP working file (22 nodes, all connect): same VLESS Reality pattern
+# PLUS Hysteria2 (TLS 443, SNI = server domain itself, no fp field -
+# Hy2 is QUIC/UDP, do NOT apply VLESS Reality criteria to it).
+# US working file (9 nodes, all connect): CyberShield SS19999 (6/8
+# connect - individual servers can die, e.g. .72/.27) + Radikal US
+# VLESS Reality (3 nodes). Radikal US SS19999 does NOT connect, all
+# Au1rxx/FastNodes US VLESS in the test were n/a (do not connect).
+# Excluded by this rule, even if GitHub-live: VMess WS TLS (connects
+# with poor line in SG, names rotate out), plain VMess, SS rc4-md5,
+# SS19999 from any source EXCEPT CyberShield, VLESS TLS non-Reality,
+# VLESS Reality with fp none or SNI = IP / empty, Trojan (unproven).
+REAL_FPS = {"chrome", "safari", "firefox", "ios"}
+
+def _is_ip(host):
+    try:
+        import ipaddress
+        ipaddress.ip_address(host)
+        return True
+    except Exception:
+        return False
+
+def _sni_is_real_domain(uri_query, server):
+    sni = uri_query.get("sni", [""])[0] if isinstance(uri_query, dict) else ""
+    if not sni or sni == "off":
+        return False
+    if _is_ip(sni) or sni == server:
+        return False
+    return "." in sni
+
+def is_vless_reality_proven(uri):
+    """VLESS Reality node matching the phone-proven SG/JP pattern."""
+    try:
+        if not uri.startswith("vless://"):
+            return False
+        parsed = urllib.parse.urlparse(uri)
+        q = urllib.parse.parse_qs(parsed.query)
+        if q.get("security", [""])[0] != "reality":
+            return False
+        if q.get("flow", [""])[0] not in ("xtls-rprx-vision",):
+            return False
+        if q.get("fp", [""])[0].lower() not in REAL_FPS:
+            return False
+        if not _sni_is_real_domain(q, parsed.hostname or ""):
+            return False
+        return True
+    except Exception:
+        return False
+
+def is_hy2_proven(uri):
+    """Hysteria2 node: TLS, SNI present. No real-SNI/fp requirement."""
+    try:
+        if not (uri.startswith("hysteria2://") or uri.startswith("hy2://")):
+            return False
+        parsed = urllib.parse.urlparse(uri)
+        q = urllib.parse.parse_qs(parsed.query)
+        sni = q.get("sni", [""])[0]
+        return bool(sni and sni != "off")
+    except Exception:
+        return False
+
+def is_working_pattern(uri, source_url, code):
+    """True only for phone-proven patterns for that country."""
+    if is_vless_reality_proven(uri):
+        return True
+    if is_hy2_proven(uri):
+        return True
+    # SS19999 ONLY from CyberShield gist (US family proven; Radikal
+    # SS19999 does NOT connect, despite the same port/cipher).
+    if code == "us" and "cybershield" in (source_url or "").lower() and is_ss_19999(uri):
+        return True
+    return False
+
+def pattern_tier(uri, source_url, code):
+    if is_vless_reality_proven(uri):
+        return 0
+    if is_hy2_proven(uri):
+        return 1
+    return 2  # CyberShield SS19999 (US only)
 
 COUNTRY_KEYWORDS = {
     "sg": ["singapore", "🇸🇬", "新加坡"],
@@ -326,7 +410,7 @@ def probe(uri, port):
 
 def run_country(code):
     seen = set()
-    unique = []
+    unique = []  # list of (uri, source_url)
     for url, already_specific in SOURCES[code]:
         try:
             print(f"[{code}] fetching {url}", flush=True)
@@ -342,17 +426,23 @@ def run_country(code):
             key = node_key(line)
             if key is None or key in seen:
                 continue
+            # v4 rule (Hsu: I will not filter myself any more - engine
+            # must send only truly working nodes to the app): drop
+            # every node that does not match a phone-proven pattern
+            # BEFORE live-testing, so MAX_TEST is not wasted on them.
+            if not is_working_pattern(line, url, code):
+                continue
             seen.add(key)
-            unique.append(line)
+            unique.append((line, url))
             kept += 1
-        print(f"[{code}] {url} -> {len(lines)} lines, {kept} kept", flush=True)
-    # SS 19999 nodes are tested first, otherwise they sit at the end
-    # of a 1000+ node list and never reach MAX_TEST.
-    ss19999 = [u for u in unique if is_ss_19999(u)]
-    ordered = ss19999 + [u for u in unique if not is_ss_19999(u)]
-    print(f"[{code}] ss19999={len(ss19999)} unique={len(unique)}", flush=True)
-    candidates = ordered[:MAX_TEST]
-    print(f"[{code}] unique={len(unique)} testing={len(candidates)}", flush=True)
+        print(f"[{code}] {url} -> {len(lines)} lines, {kept} pattern-kept", flush=True)
+    # Test pattern-proven nodes in tier order (VLESS Reality, then
+    # Hysteria2, then CyberShield SS19999), otherwise the best tier
+    # sits past MAX_TEST in a 1000+ node list.
+    unique.sort(key=lambda t: pattern_tier(t[0], t[1], code))
+    print(f"[{code}] pattern-unique={len(unique)}", flush=True)
+    candidates = [u for u, _src in unique[:MAX_TEST]]
+    print(f"[{code}] testing={len(candidates)}", flush=True)
 
     results = []
     skipped = 0
@@ -367,9 +457,11 @@ def run_country(code):
                 skipped += 1
             elif status == "live":
                 results.append((ms, uri))
-    # Rank SS 19999 live nodes first (phone-proven in Myanmar),
-    # then the rest by ms.
-    results.sort(key=lambda x: (0 if is_ss_19999(x[1]) else 1, x[0]))
+    # Rank by phone-proven tier first (VLESS Reality, Hy2, then
+    # CyberShield SS19999), then by GitHub-runner ms within a tier.
+    # Ms alone does not prove Myanmar connectivity or line quality.
+    src_by_uri = {u: src for u, src in unique}
+    results.sort(key=lambda x: (pattern_tier(x[1], src_by_uri.get(x[1], ""), code), x[0]))
     print(f"[{code}] live={len(results)} skipped={skipped} "
           f"best={results[0][0]:.0f}ms" if results else f"[{code}] live=0 skipped={skipped}", flush=True)
     return [uri for _ms, uri in results[:TOP_N]]
