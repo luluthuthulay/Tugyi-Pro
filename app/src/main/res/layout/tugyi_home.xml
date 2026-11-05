@@ -242,5 +242,16 @@
             android:textSize="15sp"
             android:textStyle="bold" />
 
+        <!-- Credit line at the very bottom of the home (Hsu, 2026-11-05). -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="24dp"
+            android:text="Developed by ဖီးနစ် (ထူးကြီး)"
+            android:textColor="#9E9E9E"
+            android:textSize="14sp" />
+
     </LinearLayout>
 </ScrollView>
