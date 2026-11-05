@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
+import android.widget.PopupMenu
 import android.widget.TextView
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
@@ -56,6 +57,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private lateinit var uploadView: TextView
     private lateinit var countryPill: TextView
     private lateinit var powerBtn: ImageButton
+    private lateinit var routeMap: TugyiRouteMapView
     private val chips = mutableMapOf<TugyiCountry, Button>()
     private var watchJob: Job? = null
     private var session = 0L
@@ -75,6 +77,26 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         uploadView = view.findViewById(R.id.tugyi_upload)
         countryPill = view.findViewById(R.id.tugyi_country_pill)
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
+        routeMap = view.findViewById(R.id.tugyi_map)
+        // Tapping the country pill opens the country list
+        // (Singapore / Japan / United States). Singapore is default.
+        countryPill.setOnClickListener { v ->
+            val popup = PopupMenu(requireContext(), v)
+            popup.menu.add(0, 1, 0, "🇸🇬 Singapore")
+            popup.menu.add(0, 2, 1, "🇯🇵 Japan")
+            popup.menu.add(0, 3, 2, "🇺🇸 United States")
+            popup.setOnMenuItemClickListener { item ->
+                val country = when (item.itemId) {
+                    1 -> TugyiCountry.SG
+                    2 -> TugyiCountry.JP
+                    else -> TugyiCountry.US
+                }
+                selectCountry(country)
+                onCountryTapped(country)
+                true
+            }
+            popup.show()
+        }
         chips[TugyiCountry.SG] = view.findViewById(R.id.btn_sg)
         chips[TugyiCountry.JP] = view.findViewById(R.id.btn_jp)
         chips[TugyiCountry.US] = view.findViewById(R.id.btn_us)
@@ -139,6 +161,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
 
     private fun selectCountry(country: TugyiCountry) {
         selectedCountry = country
+        // Move the map destination dot to this country.
+        if (::routeMap.isInitialized) {
+            routeMap.destination = TugyiRouteMapView.placeOf(country)
+        }
         for ((c, btn) in chips) {
             val selected = c == country
             btn.setBackgroundResource(
@@ -158,6 +184,8 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             BaseService.State.Connected -> {
                 TugyiPing.connectedCountry()?.let { selectCountry(it) }
                 connStatusView.text = "● Connected"
+                // Show the route Myanmar -> connected country on the map.
+                if (::routeMap.isInitialized) routeMap.connected = true
                 setStatus("Connected: ${selectedCountry.code}")
             }
             BaseService.State.Connecting -> {
@@ -165,6 +193,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             }
             else -> {
                 connStatusView.text = "● Disconnected"
+                if (::routeMap.isInitialized) routeMap.connected = false
                 showSpeed(0, 0)
             }
         }
@@ -264,8 +293,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 if (state == BaseService.State.Connected) {
                     onMainDispatcher {
                         selectCountry(country)
-                        connStatusView.text = "● Connected"
-                        setStatus("Connected: ${country.code}")
+                        refreshConnectionStatus()
                     }
                     return@runOnDefaultDispatcher
                 }

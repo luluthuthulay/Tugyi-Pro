@@ -153,17 +153,16 @@
             android:textColor="#9E9E9E"
             android:textSize="16sp" />
 
-        <ImageView
+        <!-- Route map: Myanmar origin dot, destination dot, and an
+             animated route line Myanmar -> SG/JP/US while connected. -->
+        <io.nekohasekai.sagernet.tugyi.TugyiRouteMapView
             android:id="@+id/tugyi_map"
             android:layout_width="match_parent"
             android:layout_height="170dp"
             android:layout_marginLeft="24dp"
             android:layout_marginTop="8dp"
             android:layout_marginRight="24dp"
-            android:adjustViewBounds="true"
-            android:contentDescription="World map"
-            android:scaleType="fitCenter"
-            android:src="@drawable/tugyi_world_map" />
+            android:contentDescription="World map with route" />
 
         <LinearLayout
             android:layout_width="match_parent"
