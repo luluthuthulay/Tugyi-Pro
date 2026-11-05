@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.RemoteException
 import android.view.KeyEvent
 import android.view.MenuItem
+import android.view.View
 import androidx.activity.addCallback
 import androidx.annotation.IdRes
 import androidx.core.app.ActivityCompat
@@ -319,6 +320,7 @@ class MainActivity : ThemedActivity(),
     @SuppressLint("CommitTransaction")
     fun displayFragment(fragment: ToolbarFragment) {
         if (fragment is ConfigurationFragment) {
+            binding.stats.visibility = View.VISIBLE
             binding.stats.allowShow = true
             if (DataStore.serviceState.connected) binding.stats.performShow()
             binding.fab.show()
@@ -327,12 +329,17 @@ class MainActivity : ThemedActivity(),
             // in Mbps inside the fragment, so hide the old bottom stats
             // bar here to avoid showing the speed twice. FAB stays hidden:
             // tap a country connects immediately.
+            // NOTE: performHide() alone does NOT hide it - StatsBar's
+            // behavior returns early from slideDown() when allowShow is
+            // false, so the bar stays visible (seen on Hsu's phone
+            // 2026-11-05: pink "Not connected / 0 B/s" bar). Hide it
+            // with visibility directly.
             binding.stats.allowShow = false
-            binding.stats.performHide()
+            binding.stats.visibility = View.GONE
             binding.fab.hide()
         } else if (!DataStore.showBottomBar) {
             binding.stats.allowShow = false
-            binding.stats.performHide()
+            binding.stats.visibility = View.GONE
             binding.fab.hide()
         }
         supportFragmentManager.beginTransaction()

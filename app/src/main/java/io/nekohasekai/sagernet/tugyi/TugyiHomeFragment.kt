@@ -1,6 +1,10 @@
 package io.nekohasekai.sagernet.tugyi
 
+import android.graphics.Color
 import android.os.Bundle
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.ImageButton
@@ -194,21 +198,35 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         dialog.show()
     }
 
+    // Status dot colour, like the design: green = connected,
+    // red = disconnected, amber = connecting. The dot is coloured,
+    // the text stays white. (On Hsu's phone 2026-11-05 the dot was
+    // white, not red.)
+    private fun setConnStatus(text: String, dotColor: Int) {
+        if (!::connStatusView.isInitialized) return
+        val s = SpannableString("● $text")
+        s.setSpan(
+            ForegroundColorSpan(dotColor), 0, 1,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        connStatusView.text = s
+    }
+
     private fun refreshConnectionStatus() {
         if (!::connStatusView.isInitialized) return
         when (DataStore.serviceState) {
             BaseService.State.Connected -> {
                 TugyiPing.connectedCountry()?.let { selectCountry(it) }
-                connStatusView.text = "● Connected"
+                setConnStatus("Connected", Color.parseColor("#4CAF50"))
                 // Show the route Myanmar -> connected country on the map.
                 if (::routeMap.isInitialized) routeMap.connected = true
                 setStatus("Connected: ${selectedCountry.code}")
             }
             BaseService.State.Connecting -> {
-                connStatusView.text = "● Connecting…"
+                setConnStatus("Connecting…", Color.parseColor("#FFC107"))
             }
             else -> {
-                connStatusView.text = "● Disconnected"
+                setConnStatus("Disconnected", Color.parseColor("#F44336"))
                 if (::routeMap.isInitialized) routeMap.connected = false
                 showSpeed(0, 0)
             }
@@ -262,7 +280,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         val mySession = session
         watchJob?.cancel()
         selectCountry(country)
-        connStatusView.text = "● Connecting…"
+        setConnStatus("Connecting…", Color.parseColor("#FFC107"))
         setStatus("Connecting ${country.code}…")
         runOnDefaultDispatcher {
             try {
@@ -284,7 +302,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 }
                 if (ids.isEmpty()) {
                     onMainDispatcher {
-                        connStatusView.text = "● Disconnected"
+                        setConnStatus("Disconnected", Color.parseColor("#F44336"))
                         setStatus("${country.code}: no live node")
                     }
                     return@runOnDefaultDispatcher
@@ -302,7 +320,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 connectToOrder(country, order, 0, mySession)
             } catch (e: Exception) {
                 onMainDispatcher {
-                    connStatusView.text = "● Disconnected"
+                    setConnStatus("Disconnected", Color.parseColor("#F44336"))
                     setStatus("${country.code}: ${e.message}")
                 }
             }
@@ -352,7 +370,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                         connectToOrder(country, order, index + 1, mySession)
                     } else {
                         onMainDispatcher {
-                            connStatusView.text = "● Disconnected"
+                            setConnStatus("Disconnected", Color.parseColor("#F44336"))
                             setStatus("${country.code}: no live node")
                         }
                     }

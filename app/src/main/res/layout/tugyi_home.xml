@@ -17,9 +17,14 @@
 
         <include layout="@layout/layout_appbar" />
 
+        <!-- Header 320dp (was 400dp): on Hsu's phone the tall header
+             pushed the country pill and IP line below the fold
+             (2026-11-05 screenshot). Title/menu sit below the status
+             bar: the app draws edge-to-edge, so the title was clipped
+             by the status bar at marginTop 16dp. -->
         <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="400dp"
+            android:layout_height="320dp"
             android:background="@drawable/tugyi_header_bg">
 
             <!-- Hamburger inside the blue header, like the design.
@@ -30,7 +35,7 @@
                 android:layout_height="48dp"
                 android:layout_alignParentStart="true"
                 android:layout_marginStart="8dp"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="28dp"
                 android:background="@android:color/transparent"
                 android:contentDescription="Menu"
                 android:src="@drawable/ic_navigation_menu"
@@ -40,7 +45,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_centerHorizontal="true"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="36dp"
                 android:text="VPN"
                 android:textColor="#FFFFFF"
                 android:textSize="20sp"
@@ -51,7 +56,7 @@
                 android:layout_width="140dp"
                 android:layout_height="140dp"
                 android:layout_centerHorizontal="true"
-                android:layout_marginTop="64dp"
+                android:layout_marginTop="40dp"
                 android:background="@drawable/tugyi_power_bg"
                 android:contentDescription="Connect / Disconnect"
                 android:elevation="8dp"
@@ -65,7 +70,7 @@
                 android:layout_height="wrap_content"
                 android:layout_below="@id/tugyi_power_btn"
                 android:layout_centerHorizontal="true"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="12dp"
                 android:text="● Disconnected"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp" />
@@ -76,7 +81,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="16dp"
             android:text="Speed"
             android:textColor="#9E9E9E"
             android:textSize="16sp" />
@@ -163,7 +168,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="16dp"
             android:text="Location"
             android:textColor="#9E9E9E"
             android:textSize="16sp" />
@@ -173,7 +178,7 @@
         <io.nekohasekai.sagernet.tugyi.TugyiRouteMapView
             android:id="@+id/tugyi_map"
             android:layout_width="match_parent"
-            android:layout_height="170dp"
+            android:layout_height="150dp"
             android:layout_marginLeft="24dp"
             android:layout_marginTop="8dp"
             android:layout_marginRight="24dp"
@@ -189,7 +194,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="12dp"
             android:background="@drawable/tugyi_country_pill"
             android:paddingLeft="28dp"
             android:paddingTop="10dp"
@@ -208,8 +213,8 @@
             android:id="@+id/tugyi_ip"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="24dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="16dp"
             android:gravity="center"
             android:text="IP: …"
             android:textColor="#616161"
