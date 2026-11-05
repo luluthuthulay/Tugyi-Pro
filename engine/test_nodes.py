@@ -408,6 +408,25 @@ def probe(uri, port):
     return "live", statistics.median(times)
 
 
+def load_blocklist():
+    """Node keys (URI without fragment) Hsu reported n/a / not
+    connecting from Myanmar. Engine can never know Myanmar n/a from
+    a GitHub runner - only Hsu's phone can - so these are excluded
+    here and never come back in a later run."""
+    blocked = set()
+    for path in ("engine/blocklist.txt", "blocklist.txt"):
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        blocked.add(line)
+        except FileNotFoundError:
+            pass
+    return blocked
+
+BLOCKLIST = load_blocklist()
+
 def run_country(code):
     seen = set()
     unique = []  # list of (uri, source_url)
@@ -431,6 +450,8 @@ def run_country(code):
             # every node that does not match a phone-proven pattern
             # BEFORE live-testing, so MAX_TEST is not wasted on them.
             if not is_working_pattern(line, url, code):
+                continue
+            if node_key(line) in BLOCKLIST:
                 continue
             seen.add(key)
             unique.append((line, url))
