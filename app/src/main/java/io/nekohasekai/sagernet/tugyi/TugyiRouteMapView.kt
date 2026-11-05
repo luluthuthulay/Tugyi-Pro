@@ -25,17 +25,19 @@ import kotlin.math.min
  * origin to the real destination, with a dot moving along it.
  * When disconnected, only the two dots show.
  *
- * The map bitmap is equirectangular, true scale (lon -180..180,
- * lat 87..-59, same px per degree both ways), rendered from
- * Natural Earth land data (public domain), grey land only on a
- * transparent background, so it shows grey-on-white exactly like
- * the design. Antarctica (below lat -60) is not drawn. The bitmap
- * is cropped to the land latitudes so the world fills the frame
- * (Hsu, 2026-11-05: the lat 90..-90 map left a big empty ocean
- * band at the bottom); the top margin is ~3.4 deg, so no land
- * touches the top edge - the v1 bitmap (lat 80..-60) put Arctic
- * land on row 0 and the top of the map looked cut off on Hsu's
- * phone (2026-11-05). toXY below uses the same lat range.
+ * The map bitmap is the Natural Earth projection (Tom Patterson,
+ * 2008; polynomial by Bojan Savric, 2011), rendered from Natural
+ * Earth land data (public domain), grey land only on a transparent
+ * background, so it shows grey-on-white exactly like the design.
+ * Antarctica (below lat -60) is not drawn. The projection is
+ * defined by exact math, so the dots land on the right countries:
+ * the SAME forward formula places the land and the dots (Hsu,
+ * 2026-11-06: region locations must be shown exactly, the map
+ * must not be wrong - the design picture itself cannot be used
+ * because its projection is unknown). The bitmap is drawn at
+ * 0.75x the fit-center size, so the world sits smaller in the
+ * frame with white margins all around, like the design
+ * (Hsu, 2026-11-06). toXY below uses the same projection.
  */
 class TugyiRouteMapView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
@@ -51,6 +53,18 @@ class TugyiRouteMapView @JvmOverloads constructor(
         /** Map position comes from the region list, not hardcoded here. */
         fun placeOf(country: TugyiCountry): Place =
             Place(country.lon, country.lat)
+
+        /** The world is drawn at 0.75x the fit-center size. */
+        private const val MAP_PAD = 0.75f
+
+        // Natural Earth bitmap bounds in projected coordinates
+        // (same as the render script
+        // ~/workspace/tugyi-map/render_map.py output for the
+        // 960x418 bitmap: 2% margin around the land).
+        private const val BITMAP_X0 = -2.810612
+        private const val BITMAP_X1 = 2.810612
+        private const val BITMAP_Y0 = -1.020175
+        private const val BITMAP_Y1 = 1.425776
     }
 
     private val mapBitmap by lazy {
@@ -119,11 +133,13 @@ class TugyiRouteMapView @JvmOverloads constructor(
         super.onDetachedFromWindow()
     }
 
-    /** Map bitmap placement for fit-center scaling. */
+    /** Map bitmap placement: fit-center scaling, drawn at 0.75x
+     * so the world sits smaller in the frame with white margins
+     * all around, like the design (Hsu, 2026-11-06). */
     private fun mapRect(): FloatArray {
         val bw = mapBitmap.width.toFloat()
         val bh = mapBitmap.height.toFloat()
-        val scale = min(width / bw, height / bh)
+        val scale = min(width / bw, height / bh) * MAP_PAD
         val dw = bw * scale
         val dh = bh * scale
         val left = (width - dw) / 2f
@@ -131,15 +147,31 @@ class TugyiRouteMapView @JvmOverloads constructor(
         return floatArrayOf(left, top, dw, dh)
     }
 
-    // Map bitmap latitude range (same as the render script
-    // ~/workspace/tugyi-map/render_map.py: lat 87..-59).
-    private val topLat = 87.0
-    private val bottomLat = -59.0
+    // Natural Earth forward projection (Wikipedia: l(phi) and
+    // d(phi) polynomials; phi/lambda in radians). The SAME formula
+    // rendered the bitmap, so a projected point lands on the same
+    // place on the bitmap as the land does - the dots are exact.
+    private fun project(lon: Double, lat: Double): DoubleArray {
+        val phi = Math.toRadians(lat)
+        val lambda = Math.toRadians(lon)
+        val phi2 = phi * phi
+        val phi4 = phi2 * phi2
+        val phi6 = phi4 * phi2
+        val phi8 = phi4 * phi4
+        val phi10 = phi8 * phi2
+        val phi12 = phi6 * phi6
+        val l = 0.870700 - 0.131979 * phi2 - 0.013791 * phi4 +
+            0.003971 * phi10 - 0.001529 * phi12
+        val d = phi * (1.007226 + 0.015085 * phi2 - 0.044475 * phi6 +
+            0.028874 * phi8 - 0.005916 * phi10)
+        return doubleArrayOf(l * lambda, d)
+    }
 
     private fun toXY(place: Place): FloatArray {
         val (left, top, dw, dh) = mapRect()
-        val x = left + ((place.lon + 180.0) / 360.0 * dw).toFloat()
-        val y = top + ((topLat - place.lat) / (topLat - bottomLat) * dh).toFloat()
+        val p = project(place.lon, place.lat)
+        val x = left + ((p[0] - BITMAP_X0) / (BITMAP_X1 - BITMAP_X0) * dw).toFloat()
+        val y = top + ((BITMAP_Y1 - p[1]) / (BITMAP_Y1 - BITMAP_Y0) * dh).toFloat()
         return floatArrayOf(x, y)
     }
 

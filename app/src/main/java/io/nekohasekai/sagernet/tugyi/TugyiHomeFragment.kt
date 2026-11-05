@@ -68,7 +68,6 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private lateinit var countryPill: TextView
     private lateinit var powerBtn: ImageButton
     private lateinit var routeMap: TugyiRouteMapView
-    private lateinit var ipView: TextView
     private var watchJob: Job? = null
     private var session = 0L
     private var selectedCountry = TugyiCountry.SG
@@ -96,7 +95,6 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         countryPill = view.findViewById(R.id.tugyi_country_pill)
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
         routeMap = view.findViewById(R.id.tugyi_map)
-        ipView = view.findViewById(R.id.tugyi_ip)
         // Tapping the country pill opens the region list as a
         // bottom sheet that slides up from the bottom (Hsu, 2026-11-05).
         // Singapore is default.
@@ -128,9 +126,11 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             activity?.runOnUiThread { showSpeed(txRate, rxRate) }
         }
         refreshConnectionStatus()
-        // Real IP + real location (direct IP when disconnected,
-        // exit IP when connected).
-        refreshIpInfo()
+        // Place the map dots at the REAL location (phone's real
+        // location when disconnected, exit location when connected).
+        // The IP itself is NOT shown on the home anymore
+        // (Hsu, 2026-11-06: remove the IP line).
+        refreshMapLocation()
     }
 
     override fun onPause() {
@@ -227,8 +227,8 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             watchJob?.cancel()
             SagerNet.stopService()
             refreshConnectionStatus()
-            // Back to the phone's real IP/location.
-            refreshIpInfo()
+            // Back to the phone's real location (map origin dot).
+            refreshMapLocation()
             setStatus("Disconnected")
         } else {
             onCountryTapped(selectedCountry)
@@ -277,7 +277,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
      * background ping test's result (TugyiPing writes profile.ping);
      * the connected country's own list is not re-tested while its
      * tunnel is live, so this is the node's last known ms. DB read
-     * runs off the main thread, like refreshIpInfo().
+     * runs off the main thread, like refreshMapLocation().
      */
     private fun refreshPing() {
         if (!::pingView.isInitialized) return
@@ -297,19 +297,20 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     }
 
     /**
-     * Fetch the real IP + real location and show it.
-     * Disconnected: phone's real IP (Myanmar) -> origin dot.
-     * Connected: exit node's real IP -> the label AND the map
-     * destination dot move to the real exit location, so a node
-     * that actually exits via China shows China.
-     * On failure the previous display is kept.
+     * Fetch the real IP ONLY to place the map dots at the real
+     * location. Disconnected: phone's real location (Myanmar) ->
+     * origin dot. Connected: exit node's real location -> the map
+     * destination dot moves to the real exit location, so a node
+     * that actually exits via China shows China. The IP itself is
+     * NOT displayed anywhere on the home (Hsu, 2026-11-06: the IP
+     * line was removed). On failure the previous dots are kept.
+     * TugyiIpInfo.trafficOk() (the failover check) is separate
+     * and untouched.
      */
-    private fun refreshIpInfo() {
+    private fun refreshMapLocation() {
         runOnDefaultDispatcher {
             val info = TugyiIpInfo.fetch() ?: return@runOnDefaultDispatcher
             onMainDispatcher {
-                if (!::ipView.isInitialized) return@onMainDispatcher
-                ipView.text = "IP: ${info.ip} • ${info.label}"
                 if (!::routeMap.isInitialized) return@onMainDispatcher
                 val place = TugyiRouteMapView.Place(info.lon, info.lat)
                 if (DataStore.serviceState.connected) {
@@ -459,9 +460,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                     onMainDispatcher {
                         selectCountry(country)
                         refreshConnectionStatus()
-                        // Show the REAL exit IP/location (may differ
-                        // from the tapped country, e.g. China).
-                        refreshIpInfo()
+                        // Move the map destination dot to the REAL
+                        // exit location (may differ from the tapped
+                        // country, e.g. China).
+                        refreshMapLocation()
                     }
                     return@runOnDefaultDispatcher
                 }
