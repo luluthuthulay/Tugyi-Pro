@@ -209,7 +209,7 @@
 
         <!-- Last measured ms for the connected node (Hsu, 2026-11-05).
              Under the country pill, above the IP line: "245 ms" when
-             connected, "--" when disconnected. -->
+             connected, blank when disconnected. -->
         <TextView
             android:id="@+id/tugyi_ping"
             android:layout_width="wrap_content"
