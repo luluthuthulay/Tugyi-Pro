@@ -1,45 +1,243 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Tugyi Pro home: ONLY three country buttons, plus a status line.
-     No node list, no IPs, no node names on home. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Tugyi Pro home, redesign 2026-11-05 (Hsu: change to the design he sent).
+     Blue gradient header with a big power button, live Download/Upload
+     speed in Mbps, world map, and SG/JP/US selector.
+     Home still shows ONLY SG, JP, US. No node list, no IPs, no node names.
+     The appbar include is required: ToolbarFragment needs R.id.toolbar. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
-
-    <include layout="@layout/layout_appbar" />
+    android:background="#FFFFFF"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:padding="24dp">
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
 
-        <Button
-            android:id="@+id/btn_sg"
+        <include layout="@layout/layout_appbar" />
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="340dp"
+            android:background="@drawable/tugyi_header_bg">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerHorizontal="true"
+                android:layout_marginTop="16dp"
+                android:text="VPN"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/tugyi_power_btn"
+                android:layout_width="140dp"
+                android:layout_height="140dp"
+                android:layout_centerHorizontal="true"
+                android:layout_marginTop="64dp"
+                android:background="@drawable/tugyi_power_bg"
+                android:contentDescription="Connect / Disconnect"
+                android:padding="32dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/tugyi_power" />
+
+            <TextView
+                android:id="@+id/tugyi_conn_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_below="@id/tugyi_power_btn"
+                android:layout_centerHorizontal="true"
+                android:layout_marginTop="20dp"
+                android:text="● Disconnected"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp" />
+
+        </RelativeLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="24dp"
+            android:text="Speed"
+            android:textColor="#9E9E9E"
+            android:textSize="16sp" />
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="SG" />
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/btn_jp"
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Download"
+                    android:textColor="#1E88E5"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tugyi_download"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="--"
+                    android:textColor="#212121"
+                    android:textSize="34sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="mbps"
+                    android:textColor="#9E9E9E"
+                    android:textSize="14sp" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="80dp"
+                android:layout_gravity="center_vertical"
+                android:background="#E0E0E0" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Upload"
+                    android:textColor="#1E88E5"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tugyi_upload"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="--"
+                    android:textColor="#212121"
+                    android:textSize="34sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="mbps"
+                    android:textColor="#9E9E9E"
+                    android:textSize="14sp" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="24dp"
+            android:text="Location"
+            android:textColor="#9E9E9E"
+            android:textSize="16sp" />
+
+        <ImageView
+            android:id="@+id/tugyi_map"
+            android:layout_width="match_parent"
+            android:layout_height="170dp"
+            android:layout_marginLeft="24dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginRight="24dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="World map"
+            android:scaleType="fitCenter"
+            android:src="@drawable/tugyi_world_map" />
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="JP" />
+            android:layout_marginLeft="24dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginRight="24dp"
+            android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/btn_us"
-            android:layout_width="match_parent"
+            <Button
+                android:id="@+id/btn_sg"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/tugyi_chip_selected"
+                android:text="SG"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btn_jp"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/tugyi_chip_unselected"
+                android:text="JP"
+                android:textColor="#212121"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btn_us"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/tugyi_chip_unselected"
+                android:text="US"
+                android:textColor="#212121"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tugyi_country_pill"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="US" />
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/tugyi_country_pill"
+            android:paddingLeft="28dp"
+            android:paddingTop="10dp"
+            android:paddingRight="28dp"
+            android:paddingBottom="10dp"
+            android:text="🇸🇬 Singapore"
+            android:textColor="#212121"
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tugyi_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="24dp"
             android:gravity="center"
-            android:text="Tap SG, JP or US to connect" />
+            android:text="Tap SG, JP or US to connect"
+            android:textColor="#9E9E9E"
+            android:textSize="14sp" />
 
     </LinearLayout>
-</LinearLayout>
+</ScrollView>

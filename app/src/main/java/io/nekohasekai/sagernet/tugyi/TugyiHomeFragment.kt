@@ -1,8 +1,10 @@
 package io.nekohasekai.sagernet.tugyi
 
+import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
@@ -10,18 +12,24 @@ import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.ktx.onMainDispatcher
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
+import io.nekohasekai.sagernet.ui.MainActivity
 import io.nekohasekai.sagernet.ui.ToolbarFragment
 import io.nekohasekai.sagernet.ui.VpnRequestActivity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 /**
- * Tugyi Pro home.
+ * Tugyi Pro home, redesign 2026-11-05 (Hsu: change to the design he sent).
+ *
+ * Blue gradient header with a big power button, live Download/Upload
+ * speed in Mbps, world map, and SG/JP/US selector pill.
  *
  * Home shows ONLY SG, JP, US. No node list, no IPs, no node names here.
- * Tap a country = connect immediately to that country's best live node
- * (profile #1 in its group). Tapping another country while connected
- * stops the old tunnel and starts the new country's best node.
+ * Tap a country = connect immediately to that country's best live node.
+ * Tapping another country while connected stops the old tunnel and
+ * starts the new country's best node. The power button disconnects
+ * when connected, and connects to the selected country when not.
  * If a whole country has no live node, show that and do NOT auto-switch
  * to another country.
  *
@@ -35,12 +43,23 @@ import kotlinx.coroutines.delay
  * node is tried, up to 5 nodes. If no ping ranking exists yet (first
  * run), the engine's order (#1, #2, ...) is used instead.
  * A manual tap cancels any in-flight failover watch.
+ *
+ * Live speed: MainActivity forwards cbSpeedUpdate (bytes/s, 1s interval
+ * since the v1.0.1 speedInterval fix) to this fragment, which shows
+ * Download/Upload in Mbps. When disconnected the speed shows "--".
  */
 class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
 
     private lateinit var statusView: TextView
+    private lateinit var connStatusView: TextView
+    private lateinit var downloadView: TextView
+    private lateinit var uploadView: TextView
+    private lateinit var countryPill: TextView
+    private lateinit var powerBtn: ImageButton
+    private val chips = mutableMapOf<TugyiCountry, Button>()
     private var watchJob: Job? = null
     private var session = 0L
+    private var selectedCountry = TugyiCountry.SG
 
     private val connect = registerForActivityResult(VpnRequestActivity.StartService()) {
         if (it) setStatus("VPN permission denied")
@@ -48,10 +67,36 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // Blend the app bar into the blue header.
+        toolbar.setBackgroundColor(Color.parseColor("#1E88E5"))
         statusView = view.findViewById(R.id.tugyi_status)
-        view.findViewById<Button>(R.id.btn_sg).setOnClickListener { onCountryTapped(TugyiCountry.SG) }
-        view.findViewById<Button>(R.id.btn_jp).setOnClickListener { onCountryTapped(TugyiCountry.JP) }
-        view.findViewById<Button>(R.id.btn_us).setOnClickListener { onCountryTapped(TugyiCountry.US) }
+        connStatusView = view.findViewById(R.id.tugyi_conn_status)
+        downloadView = view.findViewById(R.id.tugyi_download)
+        uploadView = view.findViewById(R.id.tugyi_upload)
+        countryPill = view.findViewById(R.id.tugyi_country_pill)
+        powerBtn = view.findViewById(R.id.tugyi_power_btn)
+        chips[TugyiCountry.SG] = view.findViewById(R.id.btn_sg)
+        chips[TugyiCountry.JP] = view.findViewById(R.id.btn_jp)
+        chips[TugyiCountry.US] = view.findViewById(R.id.btn_us)
+        for ((country, btn) in chips) {
+            btn.setOnClickListener {
+                selectCountry(country)
+                onCountryTapped(country)
+            }
+        }
+        powerBtn.setOnClickListener {
+            if (DataStore.serviceState.connected) {
+                session++
+                watchJob?.cancel()
+                SagerNet.stopService()
+                refreshConnectionStatus()
+                setStatus("Disconnected")
+            } else {
+                onCountryTapped(selectedCountry)
+            }
+        }
+        selectCountry(selectedCountry)
+        refreshConnectionStatus()
         setStatus("Tap SG, JP or US to connect")
     }
 
@@ -64,11 +109,17 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // Background ping-check of the lists already in the app.
         // Idle only, n/a dropped, ms kept lowest-ping first.
         TugyiPing.testAllAsync()
+        // Live speed from MainActivity (1s updates).
+        (activity as? MainActivity)?.onTugyiSpeedUpdate = { txRate, rxRate ->
+            onMainDispatcher { showSpeed(txRate, rxRate) }
+        }
+        refreshConnectionStatus()
     }
 
     override fun onPause() {
-        super.onPause()
+        (activity as? MainActivity)?.onTugyiSpeedUpdate = null
         TugyiAutoPull.stopWhileOpen()
+        super.onPause()
     }
 
     override fun onDestroyView() {
@@ -80,11 +131,64 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         if (::statusView.isInitialized) statusView.text = text
     }
 
+    private fun countryLabel(country: TugyiCountry): String = when (country) {
+        TugyiCountry.SG -> "🇸🇬 Singapore"
+        TugyiCountry.JP -> "🇯🇵 Japan"
+        TugyiCountry.US -> "🇺🇸 United States"
+    }
+
+    private fun selectCountry(country: TugyiCountry) {
+        selectedCountry = country
+        for ((c, btn) in chips) {
+            val selected = c == country
+            btn.setBackgroundResource(
+                if (selected) R.drawable.tugyi_chip_selected
+                else R.drawable.tugyi_chip_unselected
+            )
+            btn.setTextColor(
+                Color.parseColor(if (selected) "#FFFFFF" else "#212121")
+            )
+        }
+        if (::countryPill.isInitialized) countryPill.text = countryLabel(country)
+    }
+
+    private fun refreshConnectionStatus() {
+        if (!::connStatusView.isInitialized) return
+        when (DataStore.serviceState) {
+            BaseService.State.Connected -> {
+                TugyiPing.connectedCountry()?.let { selectCountry(it) }
+                connStatusView.text = "● Connected"
+                setStatus("Connected: ${selectedCountry.code}")
+            }
+            BaseService.State.Connecting -> {
+                connStatusView.text = "● Connecting…"
+            }
+            else -> {
+                connStatusView.text = "● Disconnected"
+                showSpeed(0, 0)
+            }
+        }
+    }
+
+    private fun showSpeed(txRate: Long, rxRate: Long) {
+        if (!::downloadView.isInitialized) return
+        if (!DataStore.serviceState.connected) {
+            downloadView.text = "--"
+            uploadView.text = "--"
+            return
+        }
+        // bytes/s -> Mbps, 1 decimal, live.
+        downloadView.text = String.format(Locale.US, "%.1f", rxRate * 8.0 / 1_000_000.0)
+        uploadView.text = String.format(Locale.US, "%.1f", txRate * 8.0 / 1_000_000.0)
+    }
+
     private fun onCountryTapped(country: TugyiCountry) {
         // A new tap cancels any previous failover watch.
         session++
         val mySession = session
         watchJob?.cancel()
+        selectCountry(country)
+        connStatusView.text = "● Connecting…"
         setStatus("Connecting ${country.code}…")
         runOnDefaultDispatcher {
             try {
@@ -105,7 +209,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                     ids = TugyiEngine.profileIds(country)
                 }
                 if (ids.isEmpty()) {
-                    onMainDispatcher { setStatus("${country.code}: no live node") }
+                    onMainDispatcher {
+                        connStatusView.text = "● Disconnected"
+                        setStatus("${country.code}: no live node")
+                    }
                     return@runOnDefaultDispatcher
                 }
                 // Lowest-ping first: use the background ping ranking if
@@ -120,7 +227,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 // failover handled by watch.
                 connectToOrder(country, order, 0, mySession)
             } catch (e: Exception) {
-                onMainDispatcher { setStatus("${country.code}: ${e.message}") }
+                onMainDispatcher {
+                    connStatusView.text = "● Disconnected"
+                    setStatus("${country.code}: ${e.message}")
+                }
             }
         }
     }
@@ -152,7 +262,11 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 waited += 500
                 val state = DataStore.serviceState
                 if (state == BaseService.State.Connected) {
-                    onMainDispatcher { setStatus("Connected: ${country.code}") }
+                    onMainDispatcher {
+                        selectCountry(country)
+                        connStatusView.text = "● Connected"
+                        setStatus("Connected: ${country.code}")
+                    }
                     return@runOnDefaultDispatcher
                 }
                 if (state == BaseService.State.Stopped) {
@@ -161,7 +275,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                         onMainDispatcher { setStatus("${country.code}: trying next node…") }
                         connectToOrder(country, order, index + 1, mySession)
                     } else {
-                        onMainDispatcher { setStatus("${country.code}: no live node") }
+                        onMainDispatcher {
+                            connStatusView.text = "● Disconnected"
+                            setStatus("${country.code}: no live node")
+                        }
                     }
                     return@runOnDefaultDispatcher
                 }

@@ -320,11 +320,15 @@ class MainActivity : ThemedActivity(),
     fun displayFragment(fragment: ToolbarFragment) {
         if (fragment is ConfigurationFragment) {
             binding.stats.allowShow = true
+            if (DataStore.serviceState.connected) binding.stats.performShow()
             binding.fab.show()
         } else if (fragment is TugyiHomeFragment) {
-            // Tugyi home has no separate Connect button: tap a country
-            // connects immediately, so hide the old FAB here.
-            binding.stats.allowShow = true
+            // Tugyi home (redesign 2026-11-05) shows its own live speed
+            // in Mbps inside the fragment, so hide the old bottom stats
+            // bar here to avoid showing the speed twice. FAB stays hidden:
+            // tap a country connects immediately.
+            binding.stats.allowShow = false
+            binding.stats.performHide()
             binding.fab.hide()
         } else if (!DataStore.showBottomBar) {
             binding.stats.allowShow = false
@@ -392,6 +396,11 @@ class MainActivity : ThemedActivity(),
     }
 
     val connection = SagerConnection(SagerConnection.CONNECTION_ID_MAIN_ACTIVITY_FOREGROUND, true)
+
+    // Tugyi home shows its own live speed (Mbps) in the fragment, so
+    // MainActivity forwards the 1s speed updates to it. Null when the
+    // Tugyi home is not visible.
+    var onTugyiSpeedUpdate: ((txRate: Long, rxRate: Long) -> Unit)? = null
     override fun onServiceConnected(service: ISagerNetService) = changeState(
         try {
             BaseService.State.values()[service.state]
@@ -414,6 +423,7 @@ class MainActivity : ThemedActivity(),
     // ONLY do UI update here, write DB in bg process
     override fun cbSpeedUpdate(stats: SpeedDisplayData) {
         binding.stats.updateSpeed(stats.txRateProxy, stats.rxRateProxy)
+        onTugyiSpeedUpdate?.invoke(stats.txRateProxy, stats.rxRateProxy)
     }
 
     override fun cbTrafficUpdate(data: TrafficData) {
