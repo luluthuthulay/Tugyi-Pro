@@ -179,13 +179,18 @@ class TugyiRouteMapView @JvmOverloads constructor(
             canvas.drawCircle(p[0], p[1], dotR, ringPaint)
         }
 
-        // Origin dot: real location (grey).
+        // Origin dot: real location (grey), always shown.
         dotPaint.color = Color.parseColor("#757575")
         canvas.drawCircle(from[0], from[1], dotR, dotPaint)
         canvas.drawCircle(from[0], from[1], dotR, ringPaint)
-        // Destination dot: blue.
-        dotPaint.color = Color.parseColor("#1E88E5")
-        canvas.drawCircle(to[0], to[1], dotR, dotPaint)
-        canvas.drawCircle(to[0], to[1], dotR, ringPaint)
+        // Destination dot: blue, ONLY when connected. In Hsu's
+        // design pictures the disconnected map has no destination
+        // dot at all - this is part of making Connected and
+        // Disconnected look clearly different (2026-11-05).
+        if (connected) {
+            dotPaint.color = Color.parseColor("#1E88E5")
+            canvas.drawCircle(to[0], to[1], dotR, dotPaint)
+            canvas.drawCircle(to[0], to[1], dotR, ringPaint)
+        }
     }
 }

@@ -18,6 +18,7 @@ import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.database.ProfileManager
 import io.nekohasekai.sagernet.ktx.onMainDispatcher
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
 import io.nekohasekai.sagernet.ui.MainActivity
@@ -59,6 +60,7 @@ import java.util.Locale
 class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
 
     private lateinit var connStatusView: TextView
+    private lateinit var pingView: TextView
     private lateinit var downloadView: TextView
     private lateinit var uploadView: TextView
     private lateinit var downloadUnitView: TextView
@@ -86,6 +88,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 ?.openDrawer(GravityCompat.START)
         }
         connStatusView = view.findViewById(R.id.tugyi_conn_status)
+        pingView = view.findViewById(R.id.tugyi_ping)
         downloadView = view.findViewById(R.id.tugyi_download)
         uploadView = view.findViewById(R.id.tugyi_upload)
         downloadUnitView = view.findViewById(R.id.tugyi_download_unit)
@@ -98,19 +101,12 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // bottom sheet that slides up from the bottom (Hsu, 2026-11-05).
         // Singapore is default.
         countryPill.setOnClickListener { showRegionSheet() }
-        powerBtn.setOnClickListener {
-            if (DataStore.serviceState.connected) {
-                session++
-                watchJob?.cancel()
-                SagerNet.stopService()
-                refreshConnectionStatus()
-                // Back to the phone's real IP/location.
-                refreshIpInfo()
-                setStatus("Disconnected")
-            } else {
-                onCountryTapped(selectedCountry)
-            }
-        }
+        // Tapping the power button OR the Connected/Disconnected
+        // status text toggles the connection (Hsu, 2026-11-05:
+        // tapping Connected did nothing because only the power
+        // button had a click listener).
+        powerBtn.setOnClickListener { toggleConnection() }
+        connStatusView.setOnClickListener { toggleConnection() }
         selectCountry(selectedCountry)
         refreshConnectionStatus()
     }
@@ -222,14 +218,40 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         connStatusView.text = s
     }
 
+    // Power button and Connected/Disconnected status text do the
+    // same thing: connect when disconnected, disconnect when
+    // connected (tap a country to switch country while connected).
+    private fun toggleConnection() {
+        if (DataStore.serviceState.connected) {
+            session++
+            watchJob?.cancel()
+            SagerNet.stopService()
+            refreshConnectionStatus()
+            // Back to the phone's real IP/location.
+            refreshIpInfo()
+            setStatus("Disconnected")
+        } else {
+            onCountryTapped(selectedCountry)
+        }
+    }
+
     private fun refreshConnectionStatus() {
         if (!::connStatusView.isInitialized) return
         when (DataStore.serviceState) {
             BaseService.State.Connected -> {
                 TugyiPing.connectedCountry()?.let { selectCountry(it) }
                 setConnStatus("Connected", Color.parseColor("#4CAF50"))
+                // Connected vs Disconnected must look clearly
+                // different (Hsu, 2026-11-05, design pictures):
+                // blue power symbol + dark country name when
+                // connected, grey power symbol + grey country name
+                // when disconnected. The map destination dot also
+                // only shows when connected (see TugyiRouteMapView).
+                if (::powerBtn.isInitialized) powerBtn.setImageResource(R.drawable.tugyi_power)
+                if (::countryPill.isInitialized) countryPill.setTextColor(Color.parseColor("#212121"))
                 // Show the route Myanmar -> connected country on the map.
                 if (::routeMap.isInitialized) routeMap.connected = true
+                refreshPing()
                 setStatus("Connected: ${selectedCountry.code}")
             }
             BaseService.State.Connecting -> {
@@ -237,8 +259,36 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             }
             else -> {
                 setConnStatus("Disconnected", Color.parseColor("#F44336"))
+                if (::powerBtn.isInitialized) powerBtn.setImageResource(R.drawable.tugyi_power_off)
+                if (::countryPill.isInitialized) countryPill.setTextColor(Color.parseColor("#9E9E9E"))
                 if (::routeMap.isInitialized) routeMap.connected = false
+                refreshPing()
                 showSpeed(0, 0)
+            }
+        }
+    }
+
+    /**
+     * Last measured ms for the connected node, on the home screen
+     * under the country pill (Hsu, 2026-11-05). The value is the
+     * background ping test's result (TugyiPing writes profile.ping);
+     * the connected country's own list is not re-tested while its
+     * tunnel is live, so this is the node's last known ms. DB read
+     * runs off the main thread, like refreshIpInfo().
+     */
+    private fun refreshPing() {
+        if (!::pingView.isInitialized) return
+        if (!DataStore.serviceState.connected) {
+            pingView.text = "--"
+            return
+        }
+        runOnDefaultDispatcher {
+            val ms = runCatching {
+                ProfileManager.getProfile(DataStore.selectedProxy)?.ping ?: 0
+            }.getOrDefault(0)
+            onMainDispatcher {
+                if (!::pingView.isInitialized) return@onMainDispatcher
+                pingView.text = if (ms > 0) "$ms ms" else "--"
             }
         }
     }
