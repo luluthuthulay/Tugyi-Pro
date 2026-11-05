@@ -38,14 +38,10 @@ class TugyiRouteMapView @JvmOverloads constructor(
     companion object {
         val MYANMAR = Place(96.0, 21.0)
         val SINGAPORE = Place(103.85, 1.29)
-        val JAPAN = Place(139.75, 35.68)
-        val USA = Place(-98.0, 39.0)
 
-        fun placeOf(country: TugyiCountry): Place = when (country) {
-            TugyiCountry.SG -> SINGAPORE
-            TugyiCountry.JP -> JAPAN
-            TugyiCountry.US -> USA
-        }
+        /** Map position comes from the region list, not hardcoded here. */
+        fun placeOf(country: TugyiCountry): Place =
+            Place(country.lon, country.lat)
     }
 
     private val mapBitmap by lazy {

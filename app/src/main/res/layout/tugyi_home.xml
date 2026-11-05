@@ -19,8 +19,22 @@
 
         <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="340dp"
+            android:layout_height="400dp"
             android:background="@drawable/tugyi_header_bg">
+
+            <!-- Hamburger inside the blue header, like the design.
+                 The pink NekoBox appbar is hidden on this home. -->
+            <ImageButton
+                android:id="@+id/tugyi_menu_btn"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_alignParentStart="true"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="8dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Menu"
+                android:src="@drawable/ic_navigation_menu"
+                android:tint="#FFFFFF" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -40,6 +54,7 @@
                 android:layout_marginTop="64dp"
                 android:background="@drawable/tugyi_power_bg"
                 android:contentDescription="Connect / Disconnect"
+                android:elevation="8dp"
                 android:padding="32dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/tugyi_power" />
@@ -164,53 +179,11 @@
             android:layout_marginRight="24dp"
             android:contentDescription="World map with route" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginLeft="24dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginRight="24dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btn_sg"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/tugyi_chip_selected"
-                android:text="SG"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/btn_jp"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="6dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/tugyi_chip_unselected"
-                android:text="JP"
-                android:textColor="#212121"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/btn_us"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/tugyi_chip_unselected"
-                android:text="US"
-                android:textColor="#212121"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-        </LinearLayout>
-
+        <!-- Country pill only, exactly like the design (Hsu, 2026-11-05).
+             No separate SG/JP/US buttons: regions are NOT hardcoded in
+             the layout. Tapping the pill opens the region list, built
+             from TugyiCountry.all() - adding a region later only needs
+             one entry in TugyiCountries.kt. -->
         <TextView
             android:id="@+id/tugyi_country_pill"
             android:layout_width="wrap_content"
@@ -236,22 +209,12 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            android:layout_marginBottom="24dp"
             android:gravity="center"
             android:text="IP: …"
             android:textColor="#616161"
             android:textSize="15sp"
             android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tugyi_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="24dp"
-            android:gravity="center"
-            android:text="Tap SG, JP or US to connect"
-            android:textColor="#9E9E9E"
-            android:textSize="14sp" />
 
     </LinearLayout>
 </ScrollView>

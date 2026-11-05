@@ -8,7 +8,10 @@
         android:centerColor="#1E88E5"
         android:endColor="#1565C0"
         android:type="linear" />
+    <!-- Deep sweeping arc like the design: the blue area is a big
+         circle whose bottom edge curves down (Hsu: exactly like the
+         picture, 2026-11-05). -->
     <corners
-        android:bottomLeftRadius="48dp"
-        android:bottomRightRadius="48dp" />
+        android:bottomLeftRadius="300dp"
+        android:bottomRightRadius="300dp" />
 </shape>

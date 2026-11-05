@@ -1,12 +1,15 @@
 package io.nekohasekai.sagernet.tugyi
 
-import android.graphics.Color
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.view.View
-import android.widget.Button
 import android.widget.ImageButton
-import android.widget.PopupMenu
+import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import androidx.core.view.GravityCompat
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.bg.BaseService
@@ -51,7 +54,6 @@ import java.util.Locale
  */
 class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
 
-    private lateinit var statusView: TextView
     private lateinit var connStatusView: TextView
     private lateinit var downloadView: TextView
     private lateinit var uploadView: TextView
@@ -59,7 +61,6 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private lateinit var powerBtn: ImageButton
     private lateinit var routeMap: TugyiRouteMapView
     private lateinit var ipView: TextView
-    private val chips = mutableMapOf<TugyiCountry, Button>()
     private var watchJob: Job? = null
     private var session = 0L
     private var selectedCountry = TugyiCountry.SG
@@ -70,9 +71,14 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        // Blend the app bar into the blue header.
-        toolbar.setBackgroundColor(Color.parseColor("#1E88E5"))
-        statusView = view.findViewById(R.id.tugyi_status)
+        // Exactly like the design Hsu sent (2026-11-05): the blue
+        // header is at the very top, so the pink NekoBox appbar is
+        // hidden on this home. The header has its own hamburger menu.
+        view.findViewById<View>(R.id.appbar)?.visibility = View.GONE
+        view.findViewById<ImageButton>(R.id.tugyi_menu_btn).setOnClickListener {
+            (activity as? MainActivity)?.binding?.drawerLayout
+                ?.openDrawer(GravityCompat.START)
+        }
         connStatusView = view.findViewById(R.id.tugyi_conn_status)
         downloadView = view.findViewById(R.id.tugyi_download)
         uploadView = view.findViewById(R.id.tugyi_upload)
@@ -80,34 +86,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
         routeMap = view.findViewById(R.id.tugyi_map)
         ipView = view.findViewById(R.id.tugyi_ip)
-        // Tapping the country pill opens the country list
-        // (Singapore / Japan / United States). Singapore is default.
-        countryPill.setOnClickListener { v ->
-            val popup = PopupMenu(requireContext(), v)
-            popup.menu.add(0, 1, 0, "🇸🇬 Singapore")
-            popup.menu.add(0, 2, 1, "🇯🇵 Japan")
-            popup.menu.add(0, 3, 2, "🇺🇸 United States")
-            popup.setOnMenuItemClickListener { item ->
-                val country = when (item.itemId) {
-                    1 -> TugyiCountry.SG
-                    2 -> TugyiCountry.JP
-                    else -> TugyiCountry.US
-                }
-                selectCountry(country)
-                onCountryTapped(country)
-                true
-            }
-            popup.show()
-        }
-        chips[TugyiCountry.SG] = view.findViewById(R.id.btn_sg)
-        chips[TugyiCountry.JP] = view.findViewById(R.id.btn_jp)
-        chips[TugyiCountry.US] = view.findViewById(R.id.btn_us)
-        for ((country, btn) in chips) {
-            btn.setOnClickListener {
-                selectCountry(country)
-                onCountryTapped(country)
-            }
-        }
+        // Tapping the country pill opens the region list as a
+        // bottom sheet that slides up from the bottom (Hsu, 2026-11-05).
+        // Singapore is default.
+        countryPill.setOnClickListener { showRegionSheet() }
         powerBtn.setOnClickListener {
             if (DataStore.serviceState.connected) {
                 session++
@@ -123,7 +105,6 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         }
         selectCountry(selectedCountry)
         refreshConnectionStatus()
-        setStatus("Tap SG, JP or US to connect")
     }
 
     override fun onResume() {
@@ -136,8 +117,11 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // Idle only, n/a dropped, ms kept lowest-ping first.
         TugyiPing.testAllAsync()
         // Live speed from MainActivity (1s updates).
+        // Fix for the v1.0.2/v1.0.4 build failure: onMainDispatcher is
+        // a suspend function and cannot be called from this plain
+        // lambda. Post to the main thread instead.
         (activity as? MainActivity)?.onTugyiSpeedUpdate = { txRate, rxRate ->
-            onMainDispatcher { showSpeed(txRate, rxRate) }
+            activity?.runOnUiThread { showSpeed(txRate, rxRate) }
         }
         refreshConnectionStatus()
         // Real IP + real location (direct IP when disconnected,
@@ -156,15 +140,16 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         super.onDestroyView()
     }
 
+    // The home has no status line (design, Hsu 2026-11-05): short
+    // messages go out as a toast instead of extra text on screen.
     private fun setStatus(text: String) {
-        if (::statusView.isInitialized) statusView.text = text
+        activity?.runOnUiThread {
+            Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private fun countryLabel(country: TugyiCountry): String = when (country) {
-        TugyiCountry.SG -> "🇸🇬 Singapore"
-        TugyiCountry.JP -> "🇯🇵 Japan"
-        TugyiCountry.US -> "🇺🇸 United States"
-    }
+    private fun countryLabel(country: TugyiCountry): String =
+        "${country.flag} ${country.fullName}"
 
     private fun selectCountry(country: TugyiCountry) {
         selectedCountry = country
@@ -172,17 +157,41 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         if (::routeMap.isInitialized) {
             routeMap.destination = TugyiRouteMapView.placeOf(country)
         }
-        for ((c, btn) in chips) {
-            val selected = c == country
-            btn.setBackgroundResource(
-                if (selected) R.drawable.tugyi_chip_selected
-                else R.drawable.tugyi_chip_unselected
-            )
-            btn.setTextColor(
-                Color.parseColor(if (selected) "#FFFFFF" else "#212121")
-            )
-        }
         if (::countryPill.isInitialized) countryPill.text = countryLabel(country)
+    }
+
+    /**
+     * Region list as a bottom sheet (Hsu, 2026-11-05): tapping the
+     * country pill slides the sheet up from the bottom of the screen.
+     * Rows are built from TugyiCountry.all(), so a region added later
+     * appears here with no UI change. Screen fit: the sheet is capped
+     * at 60% of the screen height and its list scrolls inside it.
+     */
+    private fun showRegionSheet() {
+        val dialog = BottomSheetDialog(requireContext())
+        val sheet = LayoutInflater.from(requireContext())
+            .inflate(R.layout.tugyi_region_sheet, null)
+        val list = sheet.findViewById<LinearLayout>(R.id.tugyi_region_list)
+        for (country in TugyiCountry.all()) {
+            val row = LayoutInflater.from(requireContext())
+                .inflate(R.layout.tugyi_region_row, list, false)
+            row.findViewById<TextView>(R.id.tugyi_row_flag).text = country.code
+            row.findViewById<TextView>(R.id.tugyi_row_name).text =
+                countryLabel(country)
+            row.findViewById<TextView>(R.id.tugyi_row_check).visibility =
+                if (country == selectedCountry) View.VISIBLE else View.GONE
+            row.setOnClickListener {
+                dialog.dismiss()
+                selectCountry(country)
+                onCountryTapped(country)
+            }
+            list.addView(row)
+        }
+        dialog.setContentView(sheet)
+        dialog.behavior.maxHeight =
+            (resources.displayMetrics.heightPixels * 0.6).toInt()
+        dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        dialog.show()
     }
 
     private fun refreshConnectionStatus() {
