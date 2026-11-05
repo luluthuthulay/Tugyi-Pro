@@ -41,27 +41,16 @@
                 android:src="@drawable/ic_navigation_menu"
                 android:tint="#FFFFFF" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_centerHorizontal="true"
-                android:layout_marginTop="36dp"
-                android:text="VPN"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:textStyle="bold" />
-
-            <!-- Power button sits BELOW the "VPN" title (Hsu, 2026-11-05:
-                 layout was wrong: the button at marginTop 40dp overlapped
-                 the title at 36dp, so the title was hidden behind the
-                 white circle. Title occupies ~36-63dp, so the button
-                 starts at 76dp. -->
+            <!-- No "VPN" title here: Hsu (2026-11-05) does NOT want the
+                 title shown at all. The earlier fix (move the button to
+                 marginTop 76dp to reveal the title) was reverted - the
+                 button stays at its original marginTop 40dp. -->
             <ImageButton
                 android:id="@+id/tugyi_power_btn"
                 android:layout_width="140dp"
                 android:layout_height="140dp"
                 android:layout_centerHorizontal="true"
-                android:layout_marginTop="76dp"
+                android:layout_marginTop="40dp"
                 android:background="@drawable/tugyi_power_bg"
                 android:contentDescription="Connect / Disconnect"
                 android:elevation="8dp"
