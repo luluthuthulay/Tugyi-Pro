@@ -1,18 +1,33 @@
 #!/usr/bin/env python3
 """
-Tugyi Pro engine v4 (phone-proven pattern filter, per Hsu phone tests 2026-11-05).
+Tugyi Pro engine v6 (phone-proven pattern filter, per Hsu phone tests 2026-11-05).
+
+v6 changes (2026-11-05, Hsu's YLT notes file, 17 Hysteria2 nodes):
+- New region HK (Hong Kong): the YLT subscription Hsu sent has 4 HK
+  Hy2 nodes that work from Myanmar; HK is near Myanmar like SG/JP.
+  Sources: Au1rxx by-country HK + Radikal Hong_Kong (both verified
+  live 2026-11-05) + the usual global lists filtered by HK keywords.
+  The YLT nodes themselves are Hsu's PAID subscription (per-node
+  UUIDs, traffic accounting, expires 2026-12-05) and are NEVER added
+  here - only their PATTERN is used, and hk.txt comes from public
+  sources only. The YLT file stays private in ~/workspace/ylt-notes/.
+- Hy2 rule relaxed: YLT Hy2 nodes carry NO explicit sni param, yet
+  connect from Myanmar - sing-box uses the server hostname as SNI.
+  So Hy2 now also passes when the host is a real domain (SNI
+  defaults to host); an IP host still needs an explicit sni param.
 
 Sources per country (all verified live on 2026-11-04, pushed that day):
 - Au1rxx by-country files (base64, country-specific, SG 216 / JP 148 /
-  US 694 at check time).
+  US 694 at check time; HK verified live 2026-11-05).
 - 0xRadikal/Free-v2ray-Configs Countries files (plain text, updated
-  every 15 minutes, SG 71 / JP 26 / US 288 at check time).
+  every 15 minutes, SG 71 / JP 26 / US 288 at check time;
+  Hong_Kong verified live 2026-11-05).
 - Global lists, filtered by node display name to that country only:
   NodesRadar v2ray.txt, FastNodes verified.txt, ZorVPN-nodes.txt,
   Pawdroid English sub (US only in practice).
 Global lists whose nodes carry no country name (for example
 free-nodes/v2rayfree, mostly "unknown") are NOT used, because an
-unknown-country node must never be put into an SG/JP/US list.
+unknown-country node must never be put into an SG/JP/US/HK list.
 
 Dedupe, live-test, ranking and output are as in v1: sing-box
 HTTP-over-proxy to http://www.gstatic.com/generate_204, 2 rounds,
@@ -65,6 +80,14 @@ SOURCES = {
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
         ("https://raw.githubusercontent.com/Pawdroid/Free-servers/main/static/sub_en", False),
+        ("https://gist.githubusercontent.com/cybershieldvpn/d7981da88de440c4ef8ee9271b32eb6f/raw/cybershieldvpn", False),
+    ],
+    "hk": [
+        ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-HK.txt", True),
+        ("https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Hong_Kong.txt", True),
+        ("https://radarhub.top/v2ray.txt", False),
+        ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
+        ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
         ("https://gist.githubusercontent.com/cybershieldvpn/d7981da88de440c4ef8ee9271b32eb6f/raw/cybershieldvpn", False),
     ],
 }
@@ -153,14 +176,25 @@ def is_vless_reality_proven(uri):
         return False
 
 def is_hy2_proven(uri):
-    """Hysteria2 node: TLS, SNI present. No real-SNI/fp requirement."""
+    """Hysteria2 node: TLS, SNI present or defaulting to the host.
+    No real-SNI/fp requirement (QUIC/UDP, unlike VLESS Reality).
+    YLT Hy2 (Hsu, 2026-11-05, 16/17 nodes): no explicit sni param,
+    yet connects from Myanmar - sing-box uses the server hostname
+    as SNI. So a domain host counts as SNI-present; an IP host
+    still needs an explicit sni param (the one YLT IP node used
+    sni=www.bing.com with insecure=1)."""
     try:
         if not (uri.startswith("hysteria2://") or uri.startswith("hy2://")):
             return False
         parsed = urllib.parse.urlparse(uri)
         q = urllib.parse.parse_qs(parsed.query)
+        if q.get("security", ["tls"])[0] != "tls":
+            return False
         sni = q.get("sni", [""])[0]
-        return bool(sni and sni != "off")
+        if sni and sni != "off":
+            return True
+        host = parsed.hostname or ""
+        return bool(host) and not _is_ip(host) and "." in host
     except Exception:
         return False
 
@@ -187,6 +221,7 @@ COUNTRY_KEYWORDS = {
     "sg": ["singapore", "🇸🇬", "新加坡"],
     "jp": ["japan", "🇯🇵", "日本", "tokyo", "osaka"],
     "us": ["united states", "🇺🇸", "美国", "usa"],
+    "hk": ["hong kong", "🇭🇰", "香港"],
 }
 
 

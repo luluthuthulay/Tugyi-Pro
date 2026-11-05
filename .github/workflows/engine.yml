@@ -1,6 +1,6 @@
 name: Tugyi Engine
 
-# Publish SG / JP / US live node lists for the Tugyi Pro app.
+# Publish SG / JP / US / HK live node lists for the Tugyi Pro app.
 # Runs every 6 hours and on manual dispatch. A run never overwrites a
 # previous output file with an empty or failed result.
 on:
@@ -39,10 +39,10 @@ jobs:
         run: |
           git config user.name "tugyi-engine"
           git config user.email "tugyi-engine@users.noreply.github.com"
-          git add output/sg.txt output/jp.txt output/us.txt
+          git add output/sg.txt output/jp.txt output/us.txt output/hk.txt
           if git diff --cached --quiet; then
             echo "No change, nothing to commit."
           else
-            git commit -m "Tugyi engine: update SG/JP/US live lists"
+            git commit -m "Tugyi engine: update SG/JP/US/HK live lists"
             git push
           fi
