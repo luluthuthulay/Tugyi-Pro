@@ -234,13 +234,38 @@ def b64decode_padded(s):
     return base64.b64decode(s + "=" * (-len(s) % 4))
 
 
-def node_key(uri):
-    """Exact URI (without the display name) for dedupe.
-    Dedupe by server+port alone would wrongly collapse distinct nodes
-    that share a CDN host/port but have different UUIDs/passwords, so
-    the full credential-bearing URI is the key. Returns None if the
-    URI has no scheme/host information at all.
+def node_identity(uri):
+    """Server identity for dedupe and blocklist: (scheme, credential,
+    host, port). Query params and fragment are IGNORED on purpose.
+    The old exact-URI key failed twice: (1) the same server+UUID
+    reappeared 7-10 times with trivially different query params
+    (param order, extra path/encryption flags), wasting most of the
+    10 output slots on one server; (2) a blocklisted node came back
+    in sg.txt with the same params in a different ORDER, so the
+    string comparison missed it (2026-11-05: 206.206.76.75 was in
+    blocklist.txt yet back in the output). Identity dedupe collapses
+    those variants to one entry, and identity blocklisting catches
+    them no matter how the params are ordered. Distinct UUIDs /
+    passwords on a shared host/port stay distinct, as before.
+    Returns None if the URI has no scheme/host information at all.
     """
+    try:
+        if "://" not in uri:
+            return None
+        scheme, rest = uri.split("://", 1)
+        body = rest.split("#", 1)[0].split("?", 1)[0]
+        userinfo, _, hostport = body.rpartition("@")
+        parsed = urllib.parse.urlparse(f"//{hostport}")
+        if not parsed.hostname or not parsed.port:
+            return None
+        return (scheme.lower(), userinfo, parsed.hostname.lower(), parsed.port)
+    except Exception:
+        return None
+
+
+def node_key(uri):
+    """Kept for compatibility: exact URI without fragment. Prefer
+    node_identity() for dedupe/blocklist (see above)."""
     try:
         if "://" not in uri:
             return None
@@ -409,10 +434,13 @@ def probe(uri, port):
 
 
 def load_blocklist():
-    """Node keys (URI without fragment) Hsu reported n/a / not
-    connecting from Myanmar. Engine can never know Myanmar n/a from
-    a GitHub runner - only Hsu's phone can - so these are excluded
-    here and never come back in a later run."""
+    """Server identities Hsu reported n/a / not connecting from
+    Myanmar. Engine can never know Myanmar n/a from a GitHub runner
+    - only Hsu's phone can - so these are excluded here and never
+    come back in a later run. Each line is parsed with
+    node_identity(), so an old full-URI entry and a short
+    scheme://credential@host:port entry both block every query
+    variant of that server."""
     blocked = set()
     for path in ("engine/blocklist.txt", "blocklist.txt"):
         try:
@@ -420,7 +448,9 @@ def load_blocklist():
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#"):
-                        blocked.add(line)
+                        ident = node_identity(line)
+                        if ident is not None:
+                            blocked.add(ident)
         except FileNotFoundError:
             pass
     return blocked
@@ -442,7 +472,7 @@ def run_country(code):
         for line in lines:
             if not already_specific and not matches_country(line, code):
                 continue
-            key = node_key(line)
+            key = node_identity(line)
             if key is None or key in seen:
                 continue
             # v4 rule (Hsu: I will not filter myself any more - engine
@@ -451,12 +481,22 @@ def run_country(code):
             # BEFORE live-testing, so MAX_TEST is not wasted on them.
             if not is_working_pattern(line, url, code):
                 continue
-            if node_key(line) in BLOCKLIST:
+            if key in BLOCKLIST:
                 continue
             seen.add(key)
             unique.append((line, url))
             kept += 1
         print(f"[{code}] {url} -> {len(lines)} lines, {kept} pattern-kept", flush=True)
+    # CyberShield gist nodes are phone-proven from Myanmar as a family
+    # (Hsu: SS19999 connects, SG VLESS Reality matches the proven
+    # pattern), but the GitHub probe cannot judge Myanmar connectivity
+    # - a CyberShield SG node passes this filter yet fails the probe,
+    # while GitHub-live nodes turn out Myanmar-dead (2026-11-05: all
+    # 10 SG nodes GitHub-live, all Myanmar-dead). So a CyberShield
+    # node is kept even when the probe fails it; within its tier it
+    # ranks FIRST (family phone-proven beats GitHub-only ms), and the
+    # app's own in-app ping check then ranks it and drops any n/a,
+    # as Hsu instructed. Blocklist still applies (see above).
     # Test pattern-proven nodes in tier order (VLESS Reality, then
     # Hysteria2, then CyberShield SS19999), otherwise the best tier
     # sits past MAX_TEST in a 1000+ node list.
@@ -478,14 +518,31 @@ def run_country(code):
                 skipped += 1
             elif status == "live":
                 results.append((ms, uri))
-    # Rank by phone-proven tier first (VLESS Reality, Hy2, then
-    # CyberShield SS19999), then by GitHub-runner ms within a tier.
-    # Ms alone does not prove Myanmar connectivity or line quality.
-    src_by_uri = {u: src for u, src in unique}
-    results.sort(key=lambda x: (pattern_tier(x[1], src_by_uri.get(x[1], ""), code), x[0]))
     print(f"[{code}] live={len(results)} skipped={skipped} "
           f"best={results[0][0]:.0f}ms" if results else f"[{code}] live=0 skipped={skipped}", flush=True)
-    return [uri for _ms, uri in results[:TOP_N]]
+    # Final rank: phone-proven tier first, then CyberShield first
+    # within the tier, then GitHub ms (probe-failed CyberShield last
+    # within the tier). Ms alone does not prove Myanmar connectivity
+    # or line quality.
+    src_by_uri = {u: src for u, src in unique}
+    live_uris = {uri for _ms, uri in results}
+    cyber_dead = [(None, uri) for uri in candidates
+                  if uri not in live_uris
+                  and "cybershield" in src_by_uri.get(uri, "").lower()]
+    combined = results + cyber_dead
+
+    def order_key(item):
+        ms, uri = item
+        src = src_by_uri.get(uri, "")
+        return (pattern_tier(uri, src, code),
+                0 if "cybershield" in src.lower() else 1,
+                ms if ms is not None else float("inf"))
+
+    combined.sort(key=order_key)
+    out = [uri for _ms, uri in combined]
+    print(f"[{code}] output={len(out)} (live={len(results)} "
+          f"+ cybershield-kept={len(cyber_dead)})", flush=True)
+    return out[:TOP_N]
 
 
 def main():
