@@ -25,8 +25,11 @@ import kotlin.math.min
  * origin to the real destination, with a dot moving along it.
  * When disconnected, only the two dots show.
  *
- * The map bitmap is equirectangular (lon -180..180, lat 90..-90),
- * rendered from Natural Earth land data (public domain).
+ * The map bitmap is equirectangular (lon -180..180), cropped to
+ * lat 80..-60 like the design Hsu sent - no Antarctica, so the
+ * continents fill the frame. Rendered from Natural Earth land data
+ * (public domain), grey land on a transparent background, so it
+ * shows grey-on-white exactly like the design.
  */
 class TugyiRouteMapView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
@@ -122,10 +125,14 @@ class TugyiRouteMapView @JvmOverloads constructor(
         return floatArrayOf(left, top, dw, dh)
     }
 
+    // Map bitmap latitude range (cropped like the design).
+    private val topLat = 80.0
+    private val bottomLat = -60.0
+
     private fun toXY(place: Place): FloatArray {
         val (left, top, dw, dh) = mapRect()
         val x = left + ((place.lon + 180.0) / 360.0 * dw).toFloat()
-        val y = top + ((90.0 - place.lat) / 180.0 * dh).toFloat()
+        val y = top + ((topLat - place.lat) / (topLat - bottomLat) * dh).toFloat()
         return floatArrayOf(x, y)
     }
 
