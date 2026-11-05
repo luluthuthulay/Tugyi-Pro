@@ -172,7 +172,13 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
      * at 60% of the screen height and its list scrolls inside it.
      */
     private fun showRegionSheet() {
-        val dialog = BottomSheetDialog(requireContext())
+        // Light sheet: BottomSheetDialog's default theme is DARK, so
+        // on Hsu's phone the sheet came out dark with dark text
+        // (2026-11-05 screenshot). Force the light Material theme.
+        val dialog = BottomSheetDialog(
+            requireContext(),
+            com.google.android.material.R.style.Theme_Design_Light_BottomSheetDialog
+        )
         val sheet = LayoutInflater.from(requireContext())
             .inflate(R.layout.tugyi_region_sheet, null)
         val list = sheet.findViewById<LinearLayout>(R.id.tugyi_region_list)
