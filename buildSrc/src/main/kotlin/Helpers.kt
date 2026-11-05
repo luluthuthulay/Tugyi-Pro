@@ -194,13 +194,16 @@ fun Project.setupApp() {
             outputs.all {
                 this as BaseVariantOutputImpl
                 val isPreview = outputFileName.contains("-preview")
+                // Tugyi Pro (Hsu, 2026-11-05): the GitHub release link
+                // must say Tugyi Pro, not NekoBox - so the built APKs
+                // are named TugyiPro-<version>-<abi>.apk.
                 outputFileName = if (isPreview) {
                     outputFileName.replace(
                         project.name,
-                        "NekoBox-" + requireMetadata().getProperty("PRE_VERSION_NAME")
+                        "TugyiPro-" + requireMetadata().getProperty("PRE_VERSION_NAME")
                     ).replace("-preview", "")
                 } else {
-                    outputFileName.replace(project.name, "NekoBox-$versionName")
+                    outputFileName.replace(project.name, "TugyiPro-$versionName")
                         .replace("-release", "")
                         .replace("-oss", "")
                 }

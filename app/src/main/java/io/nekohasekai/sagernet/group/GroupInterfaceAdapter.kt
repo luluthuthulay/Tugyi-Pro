@@ -67,14 +67,19 @@ class GroupInterfaceAdapter(val context: ThemedActivity) : GroupManager.Interfac
                 )
             }
 
-            onMainDispatcher {
-                delay(1000L)
+            // Tugyi (Hsu, 2026-11-05): never show the node diff popup
+            // for Tugyi groups - he does not want node names listed
+            // after a subscription update. The snackbar above stays.
+            if (!group.displayName().startsWith("Tugyi ")) {
+                onMainDispatcher {
+                    delay(1000L)
 
-                MaterialAlertDialogBuilder(context).setTitle(
-                        context.getString(
-                                R.string.group_diff, group.displayName()
-                        )
-                ).setMessage(status.trim()).setPositiveButton(android.R.string.ok, null).show()
+                    MaterialAlertDialogBuilder(context).setTitle(
+                            context.getString(
+                                    R.string.group_diff, group.displayName()
+                            )
+                    ).setMessage(status.trim()).setPositiveButton(android.R.string.ok, null).show()
+                }
             }
 
         }

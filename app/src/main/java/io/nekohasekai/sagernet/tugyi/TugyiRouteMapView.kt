@@ -26,11 +26,13 @@ import kotlin.math.min
  * When disconnected, only the two dots show.
  *
  * The map bitmap is equirectangular, true scale (lon -180..180,
- * lat 90..-90, same px per degree both ways), rendered from
- * Natural Earth land data (public domain), grey land on a
+ * lat 87..-59, same px per degree both ways), rendered from
+ * Natural Earth land data (public domain), grey land only on a
  * transparent background, so it shows grey-on-white exactly like
- * the design. Antarctica (below lat -60) is not drawn. The
- * northernmost land sits ~16px below the top edge, so no land
+ * the design. Antarctica (below lat -60) is not drawn. The bitmap
+ * is cropped to the land latitudes so the world fills the frame
+ * (Hsu, 2026-11-05: the lat 90..-90 map left a big empty ocean
+ * band at the bottom); the top margin is ~3.4 deg, so no land
  * touches the top edge - the v1 bitmap (lat 80..-60) put Arctic
  * land on row 0 and the top of the map looked cut off on Hsu's
  * phone (2026-11-05). toXY below uses the same lat range.
@@ -130,9 +132,9 @@ class TugyiRouteMapView @JvmOverloads constructor(
     }
 
     // Map bitmap latitude range (same as the render script
-    // ~/workspace/tugyi-map/render_map.py: lat 90..-90).
-    private val topLat = 90.0
-    private val bottomLat = -90.0
+    // ~/workspace/tugyi-map/render_map.py: lat 87..-59).
+    private val topLat = 87.0
+    private val bottomLat = -59.0
 
     private fun toXY(place: Place): FloatArray {
         val (left, top, dw, dh) = mapRect()
