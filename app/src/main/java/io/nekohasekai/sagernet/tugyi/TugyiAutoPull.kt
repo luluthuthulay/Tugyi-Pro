@@ -54,6 +54,9 @@ object TugyiAutoPull {
                         TugyiEngine.setPending(country, true)
                     } else {
                         TugyiEngine.applyUpdateIfIdle(country)
+                        // New list in the app: ping-check it in the
+                        // background (n/a dropped, ms kept, lowest first).
+                        TugyiPing.testCountryAsync(country, force = true)
                     }
                 } catch (e: Exception) {
                     // Silent fallback: keep the last saved live list.

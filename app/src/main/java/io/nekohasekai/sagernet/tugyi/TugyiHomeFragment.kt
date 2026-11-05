@@ -26,7 +26,14 @@ import kotlinx.coroutines.delay
  * to another country.
  *
  * In-country failover: if the best node fails to reach Connected within
- * the watch window, the fragment tries #2, then #3, same country only.
+ * the watch window, the fragment tries the next node, same country only.
+ *
+ * Lowest-ping first (Hsu, 2026-11-05 13:48): the app ping-checks each
+ * country's list in the background (TugyiPing, NekoBox UrlTest) - n/a
+ * nodes are dropped, ms nodes are kept sorted by lowest ping. A tap
+ * connects to the lowest-ping node; if it breaks, the next lowest-ping
+ * node is tried, up to 5 nodes. If no ping ranking exists yet (first
+ * run), the engine's order (#1, #2, ...) is used instead.
  * A manual tap cancels any in-flight failover watch.
  */
 class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
@@ -54,6 +61,9 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // This never touches a live tunnel (see TugyiAutoPull).
         TugyiAutoPull.checkNow()
         TugyiAutoPull.startWhileOpen()
+        // Background ping-check of the lists already in the app.
+        // Idle only, n/a dropped, ms kept lowest-ping first.
+        TugyiPing.testAllAsync()
     }
 
     override fun onPause() {
@@ -98,26 +108,43 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                     onMainDispatcher { setStatus("${country.code}: no live node") }
                     return@runOnDefaultDispatcher
                 }
-                // Connect to #1, with in-country failover handled by watch.
-                connectToIndex(country, 0, mySession)
+                // Lowest-ping first: use the background ping ranking if
+                // it exists, otherwise the engine's order. n/a nodes
+                // are already dropped from the ping ranking.
+                val ranked = TugyiPing.rankedIds(country)
+                val order = if (ranked.isNotEmpty()) ranked else ids
+                // If there is no ranking yet, start a background test
+                // now so the next tap has one.
+                if (ranked.isEmpty()) TugyiPing.testCountryAsync(country)
+                // Connect to the lowest-ping node, with in-country
+                // failover handled by watch.
+                connectToOrder(country, order, 0, mySession)
             } catch (e: Exception) {
                 onMainDispatcher { setStatus("${country.code}: ${e.message}") }
             }
         }
     }
 
-    private suspend fun connectToIndex(country: TugyiCountry, index: Int, mySession: Long) {
-        val id = TugyiEngine.selectProfile(country, index) ?: run {
+    private suspend fun connectToOrder(
+        country: TugyiCountry, order: List<Long>, index: Int, mySession: Long
+    ) {
+        val id = order.getOrNull(index) ?: run {
             onMainDispatcher { setStatus("${country.code}: no live node") }
             return
         }
+        val groupId = TugyiEngine.groupId(country) ?: run {
+            onMainDispatcher { setStatus("${country.code}: no live node") }
+            return
+        }
+        TugyiEngine.selectProfileById(groupId, id)
         onMainDispatcher {
             if (mySession == session) {
                 setStatus("Connecting ${country.code} (node ${index + 1})…")
                 connect.launch(null)
             }
         }
-        // Watch for a successful connection, then fail over in-country.
+        // Watch for a successful connection, then fail over in-country
+        // to the next lowest-ping node (up to 5 tries, same country).
         watchJob = runOnDefaultDispatcher {
             var waited = 0
             while (waited < 30_000 && mySession == session) {
@@ -129,10 +156,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                     return@runOnDefaultDispatcher
                 }
                 if (state == BaseService.State.Stopped) {
-                    // #index failed. Try the next node in the SAME country.
-                    if (index + 1 < 3) {
+                    // This node broke. Try the next one in the SAME country.
+                    if (index + 1 < order.size && index + 1 < 5) {
                         onMainDispatcher { setStatus("${country.code}: trying next node…") }
-                        connectToIndex(country, index + 1, mySession)
+                        connectToOrder(country, order, index + 1, mySession)
                     } else {
                         onMainDispatcher { setStatus("${country.code}: no live node") }
                     }

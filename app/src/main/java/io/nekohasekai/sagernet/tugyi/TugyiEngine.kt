@@ -102,9 +102,19 @@ object TugyiEngine {
             .firstOrNull { it.name == groupName(country) } ?: return null
         val ids = SagerDatabase.proxyDao.getIdsByGroup(group.id)
         val id = ids.getOrNull(index) ?: return null
-        DataStore.selectedGroup = group.id
+        return selectProfileById(group.id, id)
+    }
+
+    /** Select a profile by its id (used for ping-ranked order). */
+    fun selectProfileById(groupId: Long, id: Long): Long {
+        DataStore.selectedGroup = groupId
         DataStore.selectedProxy = id
         DataStore.currentProfile = id
         return id
     }
+
+    /** The group id for a country, or null if the group does not exist. */
+    fun groupId(country: TugyiCountry): Long? =
+        SagerDatabase.groupDao.allGroups()
+            .firstOrNull { it.name == groupName(country) }?.id
 }
