@@ -82,14 +82,36 @@
 
         </RelativeLayout>
 
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Speed header: the label with the connected node's ms beside
+             it (Hsu, 2026-11-05): "Speed  245 ms" when connected, dashes
+             when disconnected. Same view id (tugyi_ping) as before, only
+             moved here from under the country pill, so refreshPing()
+             needs no change. -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
             android:layout_marginTop="16dp"
-            android:text="Speed"
-            android:textColor="#9E9E9E"
-            android:textSize="16sp" />
+            android:gravity="center_horizontal"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Speed"
+                android:textColor="#9E9E9E"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tugyi_ping"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="--"
+                android:textColor="#1E88E5"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -210,20 +232,6 @@
             android:text="🇸🇬 Singapore"
             android:textColor="#212121"
             android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <!-- Last measured ms for the connected node (Hsu, 2026-11-05).
-             Under the country pill, above the IP line: "245 ms" when
-             connected, blank when disconnected. -->
-        <TextView
-            android:id="@+id/tugyi_ping"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="8dp"
-            android:text="--"
-            android:textColor="#1E88E5"
-            android:textSize="16sp"
             android:textStyle="bold" />
 
         <!-- Real IP + real location, from the actual IP (Hsu, 2026-11-05).
