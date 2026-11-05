@@ -252,7 +252,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 // Show the route Myanmar -> connected country on the map.
                 if (::routeMap.isInitialized) routeMap.connected = true
                 refreshPing()
-                setStatus("Connected: ${selectedCountry.code}")
+                // NO "Connected: <CODE>" toast here (Hsu, 2026-11-06):
+                // this runs on every onResume, so the pill popped up
+                // every time he came back to the app. The home screen
+                // itself already shows Connected (green dot + text).
             }
             BaseService.State.Connecting -> {
                 setConnStatus("Connecting…", Color.parseColor("#FFC107"))
