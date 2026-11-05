@@ -16,11 +16,14 @@ import kotlin.math.min
 /**
  * Tugyi Pro map (Hsu, 2026-11-05 17:21).
  *
- * The user's current IP is Myanmar, so Myanmar is the origin dot.
- * The selected country (SG/JP/US, Singapore by default) is the
- * destination dot. When the tunnel is connected, a route line is
- * drawn from Myanmar to the destination, with a dot moving along
- * it (Myanmar -> SG). When disconnected, only the two dots show.
+ * The origin dot is the phone's REAL location (from the real IP,
+ * Myanmar normally). The destination dot is the selected country
+ * (SG/JP/US, Singapore by default) - and after connecting it moves
+ * to the REAL exit location from the exit IP, so if the chosen node
+ * actually exits via China, the dot shows China (Hsu, 2026-11-05).
+ * When the tunnel is connected, a route line is drawn from the real
+ * origin to the real destination, with a dot moving along it.
+ * When disconnected, only the two dots show.
  *
  * The map bitmap is equirectangular (lon -180..180, lat 90..-90),
  * rendered from Natural Earth land data (public domain).
@@ -62,6 +65,13 @@ class TugyiRouteMapView @JvmOverloads constructor(
         strokeWidth = 5f
         color = Color.parseColor("#1E88E5")
     }
+
+    /** Real origin (phone's real IP location, Myanmar normally). */
+    var origin: Place = MYANMAR
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     var destination: Place = SINGAPORE
         set(value) {
@@ -147,7 +157,7 @@ class TugyiRouteMapView @JvmOverloads constructor(
         val (left, top, dw, dh) = mapRect()
         canvas.drawBitmap(mapBitmap, null, android.graphics.RectF(left, top, left + dw, top + dh), null)
 
-        val from = toXY(MYANMAR)
+        val from = toXY(origin)
         val to = toXY(destination)
         val dotR = 12f
 
@@ -166,7 +176,7 @@ class TugyiRouteMapView @JvmOverloads constructor(
             canvas.drawCircle(p[0], p[1], dotR, ringPaint)
         }
 
-        // Origin dot: Myanmar (grey).
+        // Origin dot: real location (grey).
         dotPaint.color = Color.parseColor("#757575")
         canvas.drawCircle(from[0], from[1], dotR, dotPaint)
         canvas.drawCircle(from[0], from[1], dotR, ringPaint)

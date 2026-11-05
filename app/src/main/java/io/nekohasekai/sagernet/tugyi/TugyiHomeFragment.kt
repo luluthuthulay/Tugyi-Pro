@@ -58,6 +58,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private lateinit var countryPill: TextView
     private lateinit var powerBtn: ImageButton
     private lateinit var routeMap: TugyiRouteMapView
+    private lateinit var ipView: TextView
     private val chips = mutableMapOf<TugyiCountry, Button>()
     private var watchJob: Job? = null
     private var session = 0L
@@ -78,6 +79,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         countryPill = view.findViewById(R.id.tugyi_country_pill)
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
         routeMap = view.findViewById(R.id.tugyi_map)
+        ipView = view.findViewById(R.id.tugyi_ip)
         // Tapping the country pill opens the country list
         // (Singapore / Japan / United States). Singapore is default.
         countryPill.setOnClickListener { v ->
@@ -112,6 +114,8 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 watchJob?.cancel()
                 SagerNet.stopService()
                 refreshConnectionStatus()
+                // Back to the phone's real IP/location.
+                refreshIpInfo()
                 setStatus("Disconnected")
             } else {
                 onCountryTapped(selectedCountry)
@@ -136,6 +140,9 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             onMainDispatcher { showSpeed(txRate, rxRate) }
         }
         refreshConnectionStatus()
+        // Real IP + real location (direct IP when disconnected,
+        // exit IP when connected).
+        refreshIpInfo()
     }
 
     override fun onPause() {
@@ -195,6 +202,35 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 connStatusView.text = "● Disconnected"
                 if (::routeMap.isInitialized) routeMap.connected = false
                 showSpeed(0, 0)
+            }
+        }
+    }
+
+    /**
+     * Fetch the real IP + real location and show it.
+     * Disconnected: phone's real IP (Myanmar) -> origin dot.
+     * Connected: exit node's real IP -> the label AND the map
+     * destination dot move to the real exit location, so a node
+     * that actually exits via China shows China.
+     * On failure the previous display is kept.
+     */
+    private fun refreshIpInfo() {
+        runOnDefaultDispatcher {
+            val info = TugyiIpInfo.fetch() ?: return@runOnDefaultDispatcher
+            onMainDispatcher {
+                if (!::ipView.isInitialized) return@onMainDispatcher
+                ipView.text = "IP: ${info.ip} • ${info.label}"
+                if (!::routeMap.isInitialized) return@onMainDispatcher
+                val place = TugyiRouteMapView.Place(info.lon, info.lat)
+                if (DataStore.serviceState.connected) {
+                    // Real exit location, not the assumed country.
+                    routeMap.destination = place
+                } else {
+                    // Real origin location.
+                    routeMap.origin = place
+                    routeMap.destination =
+                        TugyiRouteMapView.placeOf(selectedCountry)
+                }
             }
         }
     }
@@ -294,6 +330,9 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                     onMainDispatcher {
                         selectCountry(country)
                         refreshConnectionStatus()
+                        // Show the REAL exit IP/location (may differ
+                        // from the tapped country, e.g. China).
+                        refreshIpInfo()
                     }
                     return@runOnDefaultDispatcher
                 }

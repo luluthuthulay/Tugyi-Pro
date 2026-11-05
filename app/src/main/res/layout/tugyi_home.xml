@@ -227,11 +227,26 @@
             android:textSize="18sp"
             android:textStyle="bold" />
 
+        <!-- Real IP + real location, from the actual IP (Hsu, 2026-11-05).
+             Disconnected: the phone's real IP/location (Myanmar).
+             Connected: the exit node's real IP/location - if the node
+             actually exits via China, this shows China. -->
+        <TextView
+            android:id="@+id/tugyi_ip"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:text="IP: …"
+            android:textColor="#616161"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
         <TextView
             android:id="@+id/tugyi_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="8dp"
             android:layout_marginBottom="24dp"
             android:gravity="center"
             android:text="Tap SG, JP or US to connect"
