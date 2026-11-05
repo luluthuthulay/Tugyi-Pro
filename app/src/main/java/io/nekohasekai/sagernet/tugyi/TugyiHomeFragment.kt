@@ -61,6 +61,8 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private lateinit var connStatusView: TextView
     private lateinit var downloadView: TextView
     private lateinit var uploadView: TextView
+    private lateinit var downloadUnitView: TextView
+    private lateinit var uploadUnitView: TextView
     private lateinit var countryPill: TextView
     private lateinit var powerBtn: ImageButton
     private lateinit var routeMap: TugyiRouteMapView
@@ -86,6 +88,8 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         connStatusView = view.findViewById(R.id.tugyi_conn_status)
         downloadView = view.findViewById(R.id.tugyi_download)
         uploadView = view.findViewById(R.id.tugyi_upload)
+        downloadUnitView = view.findViewById(R.id.tugyi_download_unit)
+        uploadUnitView = view.findViewById(R.id.tugyi_upload_unit)
         countryPill = view.findViewById(R.id.tugyi_country_pill)
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
         routeMap = view.findViewById(R.id.tugyi_map)
@@ -273,11 +277,27 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         if (!DataStore.serviceState.connected) {
             downloadView.text = "--"
             uploadView.text = "--"
+            downloadUnitView.text = "mbps"
+            uploadUnitView.text = "mbps"
             return
         }
-        // bytes/s -> Mbps, 1 decimal, live.
-        downloadView.text = String.format(Locale.US, "%.1f", rxRate * 8.0 / 1_000_000.0)
-        uploadView.text = String.format(Locale.US, "%.1f", txRate * 8.0 / 1_000_000.0)
+        setSpeed(downloadView, downloadUnitView, rxRate)
+        setSpeed(uploadView, uploadUnitView, txRate)
+    }
+
+    private fun setSpeed(valueView: TextView, unitView: TextView, bytesPerSec: Long) {
+        // Live speed, 1s interval. Mbps when >= 1 Mbps, else KB/s, so
+        // a small upload (tens of KB/s while browsing) shows a real
+        // number instead of rounding to 0.0 Mbps and looking dead
+        // (Hsu, 2026-11-05: "Download ပဲပြတယ် upload မပြ").
+        val mbps = bytesPerSec * 8.0 / 1_000_000.0
+        if (mbps >= 1.0) {
+            valueView.text = String.format(Locale.US, "%.1f", mbps)
+            unitView.text = "mbps"
+        } else {
+            valueView.text = String.format(Locale.US, "%.0f", bytesPerSec / 1000.0)
+            unitView.text = "KB/s"
+        }
     }
 
     private fun onCountryTapped(country: TugyiCountry) {
