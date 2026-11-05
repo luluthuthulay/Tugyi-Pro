@@ -354,6 +354,29 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 waited += 500
                 val state = DataStore.serviceState
                 if (state == BaseService.State.Connected) {
+                    // "Connected" only means the tunnel started - it
+                    // does NOT prove traffic flows. A node can show
+                    // Connected yet open nothing (Hsu, 2026-11-05).
+                    // Verify real traffic through the tunnel first;
+                    // if none flows, fail over to the next node in
+                    // the SAME country instead of staying stuck.
+                    if (!TugyiIpInfo.trafficOk()) {
+                        if (index + 1 < order.size && index + 1 < 5) {
+                            onMainDispatcher {
+                                setStatus("${country.code}: connected but no traffic, trying next node…")
+                            }
+                            SagerNet.stopService()
+                            delay(900)
+                            connectToOrder(country, order, index + 1, mySession)
+                        } else {
+                            SagerNet.stopService()
+                            onMainDispatcher {
+                                setConnStatus("Disconnected", Color.parseColor("#F44336"))
+                                setStatus("${country.code}: no live node")
+                            }
+                        }
+                        return@runOnDefaultDispatcher
+                    }
                     onMainDispatcher {
                         selectCountry(country)
                         refreshConnectionStatus()

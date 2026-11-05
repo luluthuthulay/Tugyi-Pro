@@ -58,4 +58,28 @@ object TugyiIpInfo {
             null
         }
     }
+
+    /**
+     * Does real traffic flow through the tunnel right now?
+     * Blocking - call only from a background dispatcher.
+     * "Connected" only means the tunnel started; a node can show
+     * Connected yet pass no traffic (Hsu, 2026-11-05: connected but
+     * nothing opened). Try ipinfo first (it also proves the exit IP),
+     * then a plain generate_204 as a second opinion, so one blocked
+     * site alone does not condemn a working node.
+     */
+    fun trafficOk(): Boolean {
+        if (fetch() != null) return true
+        return try {
+            val conn = URL("http://www.gstatic.com/generate_204")
+                .openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            conn.setRequestProperty("User-Agent", "TugyiPro/1.0")
+            conn.responseCode == 204
+        } catch (e: Exception) {
+            Logs.d("Tugyi traffic check failed: ${e.message}")
+            false
+        }
+    }
 }
