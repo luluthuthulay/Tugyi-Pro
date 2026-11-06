@@ -10,9 +10,17 @@
     android:background="#FFFFFF"
     android:fillViewport="true">
 
+    <!-- Hsu, 2026-11-06 (v1.0.16): the map fills the space so the
+         country pill and the Developed line sit at the very bottom
+         of the home, above the phone's bottom keys. The LinearLayout
+         is match_parent (fillViewport is already true on the
+         ScrollView) and the map view takes the leftover height
+         (weight 1), so on a tall screen the map grows and the pill
+         + Developed are pushed to the bottom; on a short screen the
+         ScrollView still scrolls. -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:orientation="vertical">
 
         <include layout="@layout/layout_appbar" />
@@ -192,11 +200,15 @@
             android:textSize="16sp" />
 
         <!-- Route map: Myanmar origin dot, destination dot, and an
-             animated route line Myanmar -> SG/JP/US while connected. -->
+             animated route line Myanmar -> SG/JP/US while connected.
+             v1.0.16 (Hsu, 2026-11-06): height 0dp + weight 1, so the
+             map fills the space between Location and the bottom
+             pill instead of a fixed 150dp. -->
         <io.nekohasekai.sagernet.tugyi.TugyiRouteMapView
             android:id="@+id/tugyi_map"
             android:layout_width="match_parent"
-            android:layout_height="150dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"
             android:layout_marginLeft="24dp"
             android:layout_marginTop="8dp"
             android:layout_marginRight="24dp"

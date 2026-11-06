@@ -35,9 +35,10 @@ import kotlin.math.min
  * 2026-11-06: region locations must be shown exactly, the map
  * must not be wrong - the design picture itself cannot be used
  * because its projection is unknown). The bitmap is drawn at
- * 0.75x the fit-center size, so the world sits smaller in the
- * frame with white margins all around, like the design
- * (Hsu, 2026-11-06). toXY below uses the same projection.
+ * 0.88x the fit-center size (v1.0.16, Hsu 2026-11-06: the pill
+ * and Developed moved to the very bottom, so the map view fills
+ * the space; 0.88 is a little smaller than the first 0.95 mockup,
+ * per Hsu). toXY below uses the same projection.
  */
 class TugyiRouteMapView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
@@ -54,8 +55,8 @@ class TugyiRouteMapView @JvmOverloads constructor(
         fun placeOf(country: TugyiCountry): Place =
             Place(country.lon, country.lat)
 
-        /** The world is drawn at 0.75x the fit-center size. */
-        private const val MAP_PAD = 0.75f
+        /** The world is drawn at 0.88x the fit-center size. */
+        private const val MAP_PAD = 0.88f
 
         // Natural Earth bitmap bounds in projected coordinates
         // (same as the render script
@@ -133,7 +134,7 @@ class TugyiRouteMapView @JvmOverloads constructor(
         super.onDetachedFromWindow()
     }
 
-    /** Map bitmap placement: fit-center scaling, drawn at 0.75x
+    /** Map bitmap placement: fit-center scaling, drawn at 0.88x
      * so the world sits smaller in the frame with white margins
      * all around, like the design (Hsu, 2026-11-06). */
     private fun mapRect(): FloatArray {
