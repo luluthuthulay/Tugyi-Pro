@@ -92,6 +92,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private var session = 0L
     private var selectedCountry = TugyiCountry.SG
     private var idleWatchJob: Job? = null
+    private var switchJob: Job? = null
     private var lastTrafficAt = 0L
 
     private val connect = registerForActivityResult(VpnRequestActivity.StartService()) {
@@ -244,6 +245,12 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     }
 
     override fun onPause() {
+        if (switchJob?.isActive == true) {
+            switchJob?.cancel()
+            // A region switch was still checking: put the pill back
+            // to the country whose tunnel is live.
+            TugyiPing.connectedCountry()?.let { selectCountry(it) }
+        }
         idleWatchJob?.cancel()
         (activity as? MainActivity)?.onTugyiSpeedUpdate = null
         TugyiAutoPull.stopWhileOpen()
@@ -253,6 +260,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     override fun onDestroyView() {
         idleWatchJob?.cancel()
         watchJob?.cancel()
+        switchJob?.cancel()
         super.onDestroyView()
     }
 
@@ -342,6 +350,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             session++
             idleWatchJob?.cancel()
             watchJob?.cancel()
+            switchJob?.cancel()
             SagerNet.stopService()
             // Set the Disconnected UI DIRECTLY. stopService() only
             // sends an async CLOSE broadcast, so the state still
@@ -585,6 +594,17 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     }
 
     private fun onCountryTapped(country: TugyiCountry) {
+        // Region switch while connected (Hsu, 2026-11-06): keep the
+        // current tunnel live while the new country's ping is
+        // checked. Only stop it once the new country has a live
+        // node; if the new country's check finds no live node, the
+        // pill goes back to the old country by itself and the old
+        // tunnel stays up.
+        val current = TugyiPing.connectedCountry()
+        if (current != null && current != country) {
+            switchRegion(country, current)
+            return
+        }
         // Ping-gate: do not connect while the open-time ping check
         // for this country is still running.
         if (!ensurePingReady(country)) return
@@ -593,9 +613,85 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         val mySession = session
         idleWatchJob?.cancel()
         watchJob?.cancel()
+        switchJob?.cancel()
         selectCountry(country)
         setConnStatus("Connecting…", Color.parseColor("#FFC107"))
         setStatus("Connecting ${country.code}…")
+        startConnect(country, mySession)
+    }
+
+    // Switch to another region while a tunnel is live (Hsu,
+    // 2026-11-06: "SG ကနေ US ပြောင်းရင် SG ကို ဆက်ချိတ်ထား,
+    // pill ထဲမှာ US ပြထား, US ping စစ်, အကောင်းဆုံးကိုချိတ်,
+    // ping မအောင်ရင် pill ထဲမှာ SG ကို auto ပြန်ပြ, US
+    // မအောင်မြင်ကြောင်းပြော, SG ဆက်ချိတ်").
+    // The pill shows the new country right away, but the old tunnel
+    // is NOT stopped until the new country's ping check proves a
+    // live node exists. If the check finds no live node, the pill
+    // goes back to the old country by itself, the user is told the
+    // new country failed, and the old tunnel never stopped.
+    private fun switchRegion(newCountry: TugyiCountry, oldCountry: TugyiCountry) {
+        // Nothing to check: no profiles for the new country yet.
+        if (TugyiEngine.profileIds(newCountry).isEmpty()) {
+            setStatus("${newCountry.code}: no live node")
+            return
+        }
+        session++
+        val mySession = session
+        idleWatchJob?.cancel()
+        watchJob?.cancel()
+        switchJob?.cancel()
+        selectCountry(newCountry)
+        setStatus("Checking ${newCountry.code} nodes…")
+        switchJob = runOnDefaultDispatcher {
+            // Wait for the new country's ping ranking to settle
+            // (a test takes at most ~10s: 10 nodes, 5s timeout
+            // each, all at once; 20s is the safe bound). Start the
+            // test if none is running; a test already running is
+            // left alone. Do not proceed while a test is still
+            // running, even when an old ranking is fresh.
+            var waited = 0
+            while (waited < 20_000 && mySession == session) {
+                if (TugyiPing.isRankingFresh(newCountry) &&
+                    !TugyiPing.isTesting(newCountry)
+                ) break
+                TugyiPing.testCountryAsync(newCountry, force = true)
+                delay(500)
+                waited += 500
+            }
+            if (mySession != session) return@runOnDefaultDispatcher
+            val ranked = TugyiPing.rankedIds(newCountry)
+            if (ranked.isEmpty()) {
+                // No live node in the new country: go back to the
+                // old country by itself, say the new one failed,
+                // and the old tunnel stays up - it was never stopped.
+                onMainDispatcher {
+                    if (mySession == session) {
+                        selectCountry(oldCountry)
+                        setStatus("${newCountry.code}: no live node")
+                    }
+                }
+                return@runOnDefaultDispatcher
+            }
+            // Live node exists: now stop the old tunnel and connect
+            // the new country, lowest-ping first.
+            onMainDispatcher {
+                if (mySession == session) {
+                    setConnStatus("Connecting…", Color.parseColor("#FFC107"))
+                    setStatus("Connecting ${newCountry.code}…")
+                }
+            }
+            if (mySession != session) return@runOnDefaultDispatcher
+            startConnect(newCountry, mySession)
+        }
+    }
+
+    /** Stop the live tunnel if any, then connect this country in
+     * lowest-ping-first order (ranked + fresh unranked), with the
+     * connect watch failing over in-country. Called by
+     * onCountryTapped and by switchRegion once the new country is
+     * proven live. */
+    private fun startConnect(country: TugyiCountry, mySession: Long) {
         runOnDefaultDispatcher {
             try {
                 // Apply a pending auto-pull list first, but only if idle.
