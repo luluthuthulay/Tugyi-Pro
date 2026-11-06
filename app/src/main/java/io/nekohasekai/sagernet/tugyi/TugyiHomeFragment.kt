@@ -217,7 +217,14 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // never connects to a dead node. While the check runs the
         // user is told ("Checking nodes…"). Only when disconnected
         // - while connected the tunnel is already live.
-        if (!DataStore.serviceState.connected) ensurePingReady(selectedCountry)
+        // CORRECTION (Hsu, 2026-11-06: "App ဖွင့်တိုင်း စစ်ရမှာ"):
+        // force a fresh test of the selected country on EVERY app
+        // open, even when the last ranking is still fresh - the
+        // gate below stays closed until it finishes.
+        if (!DataStore.serviceState.connected) {
+            TugyiPing.testCountryAsync(selectedCountry, force = true)
+            ensurePingReady(selectedCountry)
+        }
         // Live speed from MainActivity (1s updates).
         // Fix for the v1.0.2/v1.0.4 build failure: onMainDispatcher is
         // a suspend function and cannot be called from this plain
@@ -553,10 +560,15 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     // country's ping ranking is settled. Ready means: the user is
     // already on this country (the live tunnel proves a node
     // works), or there is nothing to test yet (the tap will say
-    // "no live node" itself), or a test finished recently.
+    // "no live node" itself), or a test finished recently AND no
+    // test is running right now.
     private fun isPingReady(country: TugyiCountry): Boolean {
         if (TugyiPing.connectedCountry() == country) return true
         if (TugyiEngine.profileIds(country).isEmpty()) return true
+        // Hsu, 2026-11-06: while the ping is running, VPN must NOT
+        // connect - even when an old ranking is still fresh, the
+        // new check has to finish first.
+        if (TugyiPing.isTesting(country)) return false
         return TugyiPing.isRankingFresh(country)
     }
 

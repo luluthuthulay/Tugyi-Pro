@@ -32,9 +32,10 @@ import kotlinx.coroutines.sync.withPermit
  *   tested node. Two safeguards while connected: (1) the connected
  *   country's own list is NOT re-tested while its tunnel is live,
  *   so the failover order in use stays stable; (2) concurrency drops
- *   from 5 to 2, so the test does not load the phone while the
+ *   from 10 to 2, so the test does not load the phone while the
  *   tunnel is carrying traffic.
- * - 5 nodes at a time when idle, 2 at a time while connected.
+ * - 10 nodes at a time when idle (Hiddify/sing-box also test 10 at
+ *   a time; NekoBox tests 5 by default), 2 at a time while connected.
  * - ping > 0 ms = live, ping <= 0 or exception = n/a (dropped).
  * - The ranked list is saved in SharedPreferences ("tugyi_pro",
  *   key "ping_<CODE>" = comma-separated profile ids, lowest ping
@@ -59,7 +60,9 @@ object TugyiPing {
     /** Re-test at most every 30 minutes per country (Hsu, 2026-11-05).
      * Nodes do not change that fast (GitHub engine publishes every
      * 6 hours), so testing more often only wastes battery and data.
-     * A new list is still tested immediately (force = true). */
+     * A new list is still tested immediately (force = true), and the
+     * app open forces a fresh test of the selected country every
+     * time (Hsu, 2026-11-06: "App ဖွင့်တိုင်း စစ်ရမှာ"). */
     private const val MIN_RETEST_MS = 30 * 60 * 1000L
 
     private val testing = mutableSetOf<String>()
@@ -88,6 +91,13 @@ object TugyiPing {
      * waiting for a test that already ran. */
     fun isRankingFresh(country: TugyiCountry): Boolean =
         System.currentTimeMillis() - lastTestAt(country) < MIN_RETEST_MS
+
+    /** True while a ping test for this country is running right now.
+     * Used by the ping-gate (Hsu, 2026-11-06): while the ping is
+     * running, VPN must NOT connect - even when an old ranking is
+     * still fresh, the new check has to finish first. */
+    fun isTesting(country: TugyiCountry): Boolean =
+        synchronized(testing) { country.code in testing }
 
     private fun saveRanking(country: TugyiCountry, ranked: List<Long>) {
         TugyiEngine.prefs().edit()
@@ -134,8 +144,10 @@ object TugyiPing {
             .firstOrNull { it.name == TugyiEngine.groupName(country) } ?: return
         val profiles = SagerDatabase.proxyDao.getByGroup(group.id)
         if (profiles.isEmpty()) return
-        // 2 at a time while a tunnel is live, 5 when idle.
-        val concurrency = if (DataStore.serviceState.connected) 2 else 5
+        // 2 at a time while a tunnel is live, 10 when idle (Hsu,
+        // 2026-11-06: all 10 nodes at once; Hiddify/sing-box test
+        // 10 at a time, NekoBox 5 by default).
+        val concurrency = if (DataStore.serviceState.connected) 2 else 10
         val results = coroutineScope {
             val semaphore = Semaphore(concurrency)
             profiles.map { profile ->
