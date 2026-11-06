@@ -5,8 +5,10 @@ import android.os.Bundle
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -61,6 +63,17 @@ import java.util.Locale
  */
 class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
 
+    companion object {
+        /** Home layout reference height: Hsu's phone is 857dp
+         * tall (2400px / 2.8). The uniform-shrink scale is
+         * screenHeightDp / this. */
+        private const val HOME_REF_HEIGHT_DP = 857f
+        /** Clamp the shrink/grow so an extreme screen (a very
+         * short phone, a foldable) never makes the UI unusable. */
+        private const val HOME_SCALE_MIN = 0.70f
+        private const val HOME_SCALE_MAX = 1.10f
+    }
+
     private lateinit var connStatusView: TextView
     private lateinit var pingView: TextView
     private lateinit var downloadView: TextView
@@ -112,6 +125,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         countryPill = view.findViewById(R.id.tugyi_country_pill)
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
         routeMap = view.findViewById(R.id.tugyi_map)
+        // Uniform shrink (Hsu, 2026-11-06): the WHOLE Home UI
+        // shrinks/grows uniformly on smaller/bigger phones. Applied
+        // once per fresh inflation, before the first layout.
+        applyHomeUiScale(view)
         // Tapping the country pill opens the region list as a
         // bottom sheet that slides up from the bottom (Hsu, 2026-11-05).
         // Singapore is default.
@@ -124,6 +141,59 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         connStatusView.setOnClickListener { toggleConnection() }
         selectCountry(selectedCountry)
         refreshConnectionStatus()
+    }
+
+    // Uniform shrink (Hsu, 2026-11-06): the WHOLE Home UI must
+    // shrink/grow uniformly on smaller/bigger phones - not just
+    // the map. The layout is authored for Hsu's phone (857dp
+    // tall). Scale every fixed size (heights, margins, paddings,
+    // text sizes) by screenHeightDp / 857, clamped to [0.70,
+    // 1.10]. The map view (0dp + weight 1) takes the proportional
+    // leftover space, so it keeps its ~29% share on every phone.
+    // match_parent (-1), wrap_content (-2) and 0dp (weight) are
+    // <= 0 and left alone. This is the same idea as Intuit's
+    // sdp/ssp library, but keyed to screen HEIGHT: sdp keys to
+    // width, which does not fix our problem (a small phone is 25%
+    // shorter but only 7% narrower than Hsu's). Applied once per
+    // fresh inflation in onViewCreated, so it never compounds.
+    private fun applyHomeUiScale(root: View) {
+        val dm = resources.displayMetrics
+        val screenHdp = dm.heightPixels / dm.density
+        val scale = (screenHdp / HOME_REF_HEIGHT_DP)
+            .coerceIn(HOME_SCALE_MIN, HOME_SCALE_MAX)
+        routeMap.uiScale = scale
+        if (kotlin.math.abs(scale - 1f) < 0.005f) return
+        scaleViewTree(root, scale)
+    }
+
+    private fun scaleViewTree(v: View, scale: Float) {
+        // Text size (px, already includes the user's font scale).
+        if (v is TextView) {
+            v.setTextSize(TypedValue.COMPLEX_UNIT_PX, v.textSize * scale)
+        }
+        // Fixed pixel sizes and margins. match_parent, wrap_content
+        // and 0dp (weight) are <= 0 and untouched.
+        val lp = v.layoutParams
+        if (lp != null) {
+            if (lp.width > 0) lp.width = (lp.width * scale).toInt()
+            if (lp.height > 0) lp.height = (lp.height * scale).toInt()
+            if (lp is ViewGroup.MarginLayoutParams) {
+                lp.leftMargin = (lp.leftMargin * scale).toInt()
+                lp.topMargin = (lp.topMargin * scale).toInt()
+                lp.rightMargin = (lp.rightMargin * scale).toInt()
+                lp.bottomMargin = (lp.bottomMargin * scale).toInt()
+            }
+            v.layoutParams = lp
+        }
+        v.setPadding(
+            (v.paddingLeft * scale).toInt(),
+            (v.paddingTop * scale).toInt(),
+            (v.paddingRight * scale).toInt(),
+            (v.paddingBottom * scale).toInt()
+        )
+        if (v is ViewGroup) {
+            for (i in 0 until v.childCount) scaleViewTree(v.getChildAt(i), scale)
+        }
     }
 
     override fun onResume() {
