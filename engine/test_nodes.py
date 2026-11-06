@@ -16,6 +16,19 @@ v7.1 changes (2026-11-06, Hsu: "put all of it in the repo"):
   SINGAPORE (verified 2026-11-06: ipinfo, Oracle, Kampong
   Loyang) - it now goes to SG. So all 17 YLT nodes are routed.
 
+v7.2 changes (2026-11-06, Hsu: "YLT all at the top"):
+- YLT nodes rank FIRST in every country's list, ahead of VLESS.
+  Before, VLESS (tier 0) filled 9 of 10 slots and only 1 YLT Hy2
+  made the top 10, even though YLT is the phone-proven family
+  from Myanmar and GitHub-live VLESS nodes have repeatedly turned
+  out Myanmar-dead. Now the order is: YLT first (by tier, then
+  ms), then the old order (tier, trusted, ms). SG top 10 becomes
+  8 YLT + 2 best others; HK becomes 9 YLT + 1 best other.
+- YLT nodes are also probed first: the MAX_TEST candidate cut
+  sorts YLT before pattern tier, so a long VLESS list can never
+  crowd YLT out of the probe set entirely. The >=1 YLT guarantee
+  stays as a safety net.
+
 v7 changes (2026-11-05, Hsu: "add it into my engine"):
 - YLT source ADDED: the provider Ye Lin Tun gives his Weather
   Widget key free himself (Hsu 2026-11-05 22:45 - the earlier
@@ -656,7 +669,10 @@ def run_country(code):
     # Test pattern-proven nodes in tier order (VLESS Reality, then
     # Hysteria2, then CyberShield SS19999), otherwise the best tier
     # sits past MAX_TEST in a 1000+ node list.
-    unique.sort(key=lambda t: pattern_tier(t[0], t[1], code))
+    # YLT first in the probe set too (v7.2): a long VLESS list must
+    # never crowd the phone-proven YLT nodes out of MAX_TEST.
+    unique.sort(key=lambda t: (0 if is_ylt_source(t[1]) else 1,
+                               pattern_tier(t[0], t[1], code)))
     print(f"[{code}] pattern-unique={len(unique)}", flush=True)
     candidates = [u for u, _src in unique[:MAX_TEST]]
     print(f"[{code}] testing={len(candidates)}", flush=True)
@@ -690,7 +706,8 @@ def run_country(code):
     def order_key(item):
         ms, uri = item
         src = src_by_uri.get(uri, "")
-        return (pattern_tier(uri, src, code),
+        return (0 if is_ylt_source(src) else 1,
+                pattern_tier(uri, src, code),
                 0 if is_trusted_family(src) else 1,
                 ms if ms is not None else float("inf"))
 
