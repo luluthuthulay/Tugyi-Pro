@@ -239,6 +239,25 @@
             android:textSize="18sp"
             android:textStyle="bold" />
 
+        <!-- Ping-check notice (Hsu, 2026-11-06): while the nodes
+             are being ping-checked, this line stays on screen so
+             the user can SEE the check is still running - the old
+             "Checking nodes…" toast vanished after ~2s, so nobody
+             could tell whether the check was done or not. GONE by
+             default; the fragment shows it while
+             TugyiPing.isTesting(selectedCountry) and hides it the
+             moment the check finishes. -->
+        <TextView
+            android:id="@+id/tugyi_checking_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
+            android:text="Nodes are being checked.. please wait.."
+            android:textColor="#FF8F00"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
         <!-- Credit line at the very bottom of the home (Hsu, 2026-11-05). -->
         <TextView
             android:layout_width="wrap_content"

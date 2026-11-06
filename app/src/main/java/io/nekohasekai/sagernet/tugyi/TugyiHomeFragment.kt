@@ -77,6 +77,14 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
          * with trafficOk() and fail over if the node is dead. */
         private const val IDLE_CHECK_MS = 5_000L
         private const val IDLE_TRIGGER_MS = 30_000L
+        /** Open-time ping check runs once per app process (Hsu,
+         * 2026-11-06): on a fresh launch it always checks, so
+         * "Checking nodes" appears on open; hiding the app and
+         * reopening it (background not cleared, same process)
+         * must NOT check again. A companion var resets only when
+         * the process dies, which is exactly "background
+         * cleared". */
+        private var openCheckDone = false
     }
 
     private lateinit var connStatusView: TextView
@@ -86,6 +94,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private lateinit var downloadUnitView: TextView
     private lateinit var uploadUnitView: TextView
     private lateinit var countryPill: TextView
+    private lateinit var checkingText: TextView
     private lateinit var powerBtn: ImageButton
     private lateinit var routeMap: TugyiRouteMapView
     private var watchJob: Job? = null
@@ -93,6 +102,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private var selectedCountry = TugyiCountry.SG
     private var idleWatchJob: Job? = null
     private var switchJob: Job? = null
+    private var checkingJob: Job? = null
     private var lastTrafficAt = 0L
 
     private val connect = registerForActivityResult(VpnRequestActivity.StartService()) {
@@ -131,6 +141,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         downloadUnitView = view.findViewById(R.id.tugyi_download_unit)
         uploadUnitView = view.findViewById(R.id.tugyi_upload_unit)
         countryPill = view.findViewById(R.id.tugyi_country_pill)
+        checkingText = view.findViewById(R.id.tugyi_checking_text)
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
         routeMap = view.findViewById(R.id.tugyi_map)
         // Uniform shrink (Hsu, 2026-11-06): the WHOLE Home UI
@@ -216,15 +227,34 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // Ping-gate on open (Hsu, 2026-11-06): check ms FIRST and
         // only allow VPN on once the check is stable, so the app
         // never connects to a dead node. While the check runs the
-        // user is told ("Checking nodes…"). Only when disconnected
-        // - while connected the tunnel is already live.
-        // CORRECTION (Hsu, 2026-11-06: "App ဖွင့်တိုင်း စစ်ရမှာ"):
-        // force a fresh test of the selected country on EVERY app
-        // open, even when the last ranking is still fresh - the
-        // gate below stays closed until it finishes.
-        if (!DataStore.serviceState.connected) {
+        // user is told (the "Nodes are being checked.." line on
+        // the home, plus a "Checking nodes…" toast). Only when
+        // disconnected - while connected the tunnel is already live.
+        // CORRECTION 2 (Hsu, 2026-11-06): the forced open-time
+        // check runs ONCE per app process. Hiding the app and
+        // reopening it (background not cleared, same process)
+        // must NOT check again - the first check's result still
+        // stands. Only a fresh launch (background cleared /
+        // process killed) checks again.
+        if (!DataStore.serviceState.connected && !openCheckDone) {
+            openCheckDone = true
             TugyiPing.testCountryAsync(selectedCountry, force = true)
             ensurePingReady(selectedCountry)
+        }
+        // Ping-check notice (Hsu, 2026-11-06): the "Checking
+        // nodes…" toast vanished after ~2s, so nobody could tell
+        // whether the check was done. While this home is visible,
+        // keep the on-screen "Nodes are being checked.." line up
+        // as long as the selected country's test is running; it
+        // disappears the moment the check finishes.
+        setCheckingVisible(TugyiPing.isTesting(selectedCountry))
+        checkingJob?.cancel()
+        checkingJob = runOnDefaultDispatcher {
+            while (true) {
+                val testing = TugyiPing.isTesting(selectedCountry)
+                onMainDispatcher { setCheckingVisible(testing) }
+                delay(500)
+            }
         }
         // Live speed from MainActivity (1s updates).
         // Fix for the v1.0.2/v1.0.4 build failure: onMainDispatcher is
@@ -245,6 +275,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     }
 
     override fun onPause() {
+        checkingJob?.cancel()
         if (switchJob?.isActive == true) {
             switchJob?.cancel()
             // A region switch was still checking: put the pill back
@@ -261,6 +292,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         idleWatchJob?.cancel()
         watchJob?.cancel()
         switchJob?.cancel()
+        checkingJob?.cancel()
         super.onDestroyView()
     }
 
@@ -269,6 +301,17 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private fun setStatus(text: String) {
         activity?.runOnUiThread {
             Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Ping-check notice (Hsu, 2026-11-06): "Nodes are being
+     * checked.. please wait.." stays on screen while the
+     * selected country's ping test runs, and disappears the
+     * moment the check finishes - so the user can SEE whether
+     * the check is done. Must run on the main thread. */
+    private fun setCheckingVisible(visible: Boolean) {
+        if (::checkingText.isInitialized) {
+            checkingText.visibility = if (visible) View.VISIBLE else View.GONE
         }
     }
 
