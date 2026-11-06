@@ -2,6 +2,20 @@
 """
 Tugyi Pro engine v7 (phone-proven pattern filter, per Hsu phone tests 2026-11-05).
 
+v7.1 changes (2026-11-06, Hsu: "put all of it in the repo"):
+- The YLT key is now ALSO committed in the repo as
+  engine/ylt-nodes.txt (all 17 nodes, decoded plaintext) and read
+  as a source alongside YLT_URL, so the engine does not depend on
+  the Google Docs link alone. Identical nodes dedupe. The earlier
+  "never publish the URIs" rule was May's own inference from the
+  wrong "paid" label - Hsu corrected it: the provider gives the
+  key free himself, and the link already serves the same URIs.
+- nw4 is HONG KONG (verified 2026-11-06: all 5 nw4 hosts resolve
+  via DoH to 112.120.123.140, Hong Kong, HKT Limited) - nw4 nodes
+  now go to HK. The direct-IP node (138.2.73.238:50160) is
+  SINGAPORE (verified 2026-11-06: ipinfo, Oracle, Kampong
+  Loyang) - it now goes to SG. So all 17 YLT nodes are routed.
+
 v7 changes (2026-11-05, Hsu: "add it into my engine"):
 - YLT source ADDED: the provider Ye Lin Tun gives his Weather
   Widget key free himself (Hsu 2026-11-05 22:45 - the earlier
@@ -14,8 +28,9 @@ v7 changes (2026-11-05, Hsu: "add it into my engine"):
   last good output on fetch failure, as always.
 - Hostname-region matching: YLT node display names carry no
   country word, so they are matched by their host subdomain
-  instead (sg7 -> SG, hk3 -> HK; nw4 is still unidentified and
-  is skipped). Any source whose hosts carry a region code works
+  instead (sg7 -> SG, hk3 -> HK; nw4 = HK since v7.1, verified
+  2026-11-06; the direct-IP node = SG since v7.1, verified
+  2026-11-06). Any source whose hosts carry a region code works
   the same way.
 - Hy2 probe: when a Hy2 node has no explicit sni param, the
   sing-box outbound now sets server_name to the server hostname
@@ -92,12 +107,26 @@ from concurrent.futures import ThreadPoolExecutor
 # 17 Hysteria2 nodes, expires 2026-12-05.
 YLT_URL = "https://docs.google.com/uc?export=download&id=1PDrkJx2boCgnxjahRjax_hqwi5D8eE8K"
 
+# The same key is ALSO committed in the repo as engine/ylt-nodes.txt
+# (Hsu 2026-11-06: "put all of it in the repo") - all 17 nodes,
+# decoded plaintext, so the engine does not depend on the Google
+# Docs link alone. The link stays as a source too (fresher if the
+# provider rotates the key); identical nodes dedupe.
+YLT_FILE = "engine/ylt-nodes.txt"
+
+
+def is_ylt_source(source_url):
+    """True for either YLT source: the public Google Docs link or
+    the key committed in the repo (engine/ylt-nodes.txt)."""
+    return source_url in (YLT_URL, YLT_FILE)
+
 SOURCES = {
     # (url, already_country_specific)
     "sg": [
         ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-SG.txt", True),
         ("https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Singapore.txt", True),
         (YLT_URL, False),
+        (YLT_FILE, False),
         ("https://radarhub.top/v2ray.txt", False),
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
@@ -124,6 +153,7 @@ SOURCES = {
         ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-HK.txt", True),
         ("https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Hong_Kong.txt", True),
         (YLT_URL, False),
+        (YLT_FILE, False),
         ("https://radarhub.top/v2ray.txt", False),
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
@@ -273,11 +303,21 @@ def node_country_name(uri):
 
 
 # Host subdomains that carry a region code (YLT hosts look like
-# <uuid>-<group>.sg7.hyhuawel.com). nw4 is NOT listed: its region
-# is still unidentified (Hsu was asked), so nw4 nodes are skipped.
+# <uuid>-<group>.sg7.hyhuawei.com). nw4 is Hong Kong: all 5 nw4
+# hosts resolve (DoH, 2026-11-06) to 112.120.123.140, Hong Kong
+# (HKT Limited). The direct-IP YLT node (138.2.73.238) is
+# Singapore (ipinfo, 2026-11-06, Oracle, Kampong Loyang).
 HOST_REGION = {
     "sg7": "sg",
     "hk3": "hk",
+    "nw4": "hk",
+}
+
+# Direct-IP hosts have no region subdomain; this one is SG by
+# geolocation (see above). Any other IP host still needs an
+# explicit sni param and a country word in its display name.
+HOST_IP_REGION = {
+    "138.2.73.238": "sg",
 }
 
 
@@ -291,6 +331,8 @@ def host_region(uri):
     for key, code in HOST_REGION.items():
         if f".{key}." in host:
             return code
+    if host in HOST_IP_REGION:
+        return HOST_IP_REGION[host]
     return None
 
 
@@ -312,6 +354,16 @@ def fetch_text(url):
     req = urllib.request.Request(url, headers={"User-Agent": "TugyiPro-Engine/1.0"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return r.read().decode(errors="ignore")
+
+
+def read_source(url):
+    """A source is a URL, or a repo-local file (no '://') such as
+    engine/ylt-nodes.txt. Local files are read from the checkout;
+    the GitHub workflow runs from the repo root."""
+    if "://" not in url:
+        with open(url, encoding="utf-8") as f:
+            return f.read()
+    return fetch_text(url)
 
 
 def decode_subscription(text):
@@ -565,7 +617,7 @@ def run_country(code):
     for url, already_specific in SOURCES[code]:
         try:
             print(f"[{code}] fetching {url}", flush=True)
-            raw = fetch_text(url)
+            raw = read_source(url)
             lines = decode_subscription(raw)
         except Exception as e:
             print(f"[{code}] source failed, skipping: {url} ({e})", flush=True)
@@ -653,9 +705,9 @@ def run_country(code):
     # probe crowds the phone-proven YLT nodes out entirely.
     # CyberShield being present does not count - Hsu asked for
     # YLT specifically.
-    if top and not any(src_by_uri.get(u, "") == YLT_URL for u in top):
+    if top and not any(is_ylt_source(src_by_uri.get(u, "")) for u in top):
         ylt_rest = [u for u in out[TOP_N:]
-                    if src_by_uri.get(u, "") == YLT_URL]
+                    if is_ylt_source(src_by_uri.get(u, ""))]
         if ylt_rest:
             top[-1] = ylt_rest[0]
             print(f"[{code}] YLT guarantee: swapped in "
@@ -671,7 +723,7 @@ def is_trusted_family(source_url):
     src = (source_url or "").lower()
     if "cybershield" in src:
         return True
-    return source_url == YLT_URL
+    return is_ylt_source(source_url)
 
 
 def main():
