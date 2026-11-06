@@ -38,7 +38,10 @@ import kotlin.math.min
  * 0.88x the fit-center size (v1.0.16, Hsu 2026-11-06: the pill
  * and Developed moved to the very bottom, so the map view fills
  * the space; 0.88 is a little smaller than the first 0.95 mockup,
- * per Hsu). toXY below uses the same projection.
+ * per Hsu). toXY below uses the same projection. v1.0.17: the map
+ * is stretched vertically x1.54 to match the design picture (Hsu,
+ * 2026-11-06: "do it like the top picture") - the stretch applies
+ * to both the bitmap and the dot math, so the dots stay exact.
  */
 class TugyiRouteMapView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
@@ -60,12 +63,22 @@ class TugyiRouteMapView @JvmOverloads constructor(
 
         // Natural Earth bitmap bounds in projected coordinates
         // (same as the render script
-        // ~/workspace/tugyi-map/render_map.py output for the
-        // 960x418 bitmap: 2% margin around the land).
+        // ~/workspace/tugyi-map/render_map_natearth3.py output
+        // for the 960x684 bitmap). The design picture's world is
+        // ~1.54x TALLER than Natural Earth (design land 613x410
+        // aspect 1.49 vs Natural Earth 682x296 aspect 2.30), so
+        // Hsu chose to stretch the map vertically x1.54 to match
+        // the design (2026-11-06: "do it like the top picture").
+        // The stretch applies to d (below) AND to these bounds,
+        // so the dots stay exactly on their countries. The land
+        // shapes are taller than geographically real - Hsu's call.
+        // 8% margin above the land (BY1 1.5808 x1.54).
         private const val BITMAP_X0 = -2.810612
         private const val BITMAP_X1 = 2.810612
-        private const val BITMAP_Y0 = -1.020175
-        private const val BITMAP_Y1 = 1.425776
+        private const val BITMAP_Y0 = -1.57107
+        private const val BITMAP_Y1 = 2.434432
+        // Vertical stretch to match the design picture (see above).
+        private const val MAP_STRETCH_Y = 1.54
     }
 
     private val mapBitmap by lazy {
@@ -134,9 +147,14 @@ class TugyiRouteMapView @JvmOverloads constructor(
         super.onDetachedFromWindow()
     }
 
-    /** Map bitmap placement: fit-center scaling, drawn at 0.88x
-     * so the world sits smaller in the frame with white margins
-     * all around, like the design (Hsu, 2026-11-06). */
+    /** Map bitmap placement: fit-center scaling horizontally,
+     * drawn at 0.88x, but anchored to the BOTTOM of the view
+     * (right above the region pill) instead of centred. Hsu,
+     * 2026-11-06: the pill and the map were too far apart on his
+     * phone (the bitmap floated in the middle of the tall view,
+     * ~150px of white above and below it) - pull the map down to
+     * the pill, so the top opens up and the map shows fully.
+     * toXY uses this same rect, so the dots stay exact. */
     private fun mapRect(): FloatArray {
         val bw = mapBitmap.width.toFloat()
         val bh = mapBitmap.height.toFloat()
@@ -144,7 +162,7 @@ class TugyiRouteMapView @JvmOverloads constructor(
         val dw = bw * scale
         val dh = bh * scale
         val left = (width - dw) / 2f
-        val top = (height - dh) / 2f
+        val top = height - dh
         return floatArrayOf(left, top, dw, dh)
     }
 
@@ -164,7 +182,7 @@ class TugyiRouteMapView @JvmOverloads constructor(
         val l = 0.870700 - 0.131979 * phi2 - 0.013791 * phi4 +
             0.003971 * phi10 - 0.001529 * phi12
         val d = phi * (1.007226 + 0.015085 * phi2 - 0.044475 * phi6 +
-            0.028874 * phi8 - 0.005916 * phi10)
+            0.028874 * phi8 - 0.005916 * phi10) * MAP_STRETCH_Y
         return doubleArrayOf(l * lambda, d)
     }
 

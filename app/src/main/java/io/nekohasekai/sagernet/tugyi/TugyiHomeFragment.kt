@@ -12,6 +12,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.GravityCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.nekohasekai.sagernet.R
@@ -82,6 +84,21 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // header is at the very top, so the pink NekoBox appbar is
         // hidden on this home. The header has its own hamburger menu.
         view.findViewById<View>(R.id.appbar)?.visibility = View.GONE
+        // Screen fit (Hsu, 2026-11-06): the app is edge-to-edge
+        // (targetSdk 35), so with the v1.0.16 bottom-anchored
+        // layout the Developed line ended up UNDER the phone's
+        // bottom keys. Pad the bottom of the home by the
+        // navigation bar inset, so the pill + Developed stay
+        // above the keys. Only the bottom is inset - the blue
+        // header keeps drawing behind the status bar, like before.
+        // No fitsSystemWindows is set anywhere in the layouts, so
+        // the insets reach this view.
+        ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
+            val navBar =
+                insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, navBar)
+            insets
+        }
         view.findViewById<ImageButton>(R.id.tugyi_menu_btn).setOnClickListener {
             (activity as? MainActivity)?.binding?.drawerLayout
                 ?.openDrawer(GravityCompat.START)
