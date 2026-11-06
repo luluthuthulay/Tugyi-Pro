@@ -30,6 +30,7 @@ import io.nekohasekai.sagernet.ui.ToolbarFragment
 import io.nekohasekai.sagernet.ui.VpnRequestActivity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
 /**
@@ -72,6 +73,18 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
          * short phone, a foldable) never makes the UI unusable. */
         private const val HOME_SCALE_MIN = 0.70f
         private const val HOME_SCALE_MAX = 1.10f
+        /** Idle watch (Hsu, 2026-11-06): while Connected, check
+         * every 5s; if no traffic at all flows for 30s, verify
+         * with trafficOk() and fail over if the node is dead. */
+        private const val IDLE_CHECK_MS = 5_000L
+        private const val IDLE_TRIGGER_MS = 30_000L
+        /** Ping-gate timeout (Hsu, 2026-11-06): the open-time ping
+         * check releases the gate after 60s at most, so a slow
+         * network can never lock the app forever. */
+        private const val PING_GATE_TIMEOUT_MS = 60_000L
+        /** Ping-gate runs once per app process start (Hsu,
+         * 2026-11-06): app open = fresh ping-check first. */
+        private var pingGateDone = false
     }
 
     private lateinit var connStatusView: TextView
@@ -86,6 +99,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private var watchJob: Job? = null
     private var session = 0L
     private var selectedCountry = TugyiCountry.SG
+    private var idleWatchJob: Job? = null
+    private var lastTrafficAt = 0L
+    private var pingGateJob: Job? = null
+    private var pingGateRunning = false
 
     private val connect = registerForActivityResult(VpnRequestActivity.StartService()) {
         if (it) setStatus("VPN permission denied")
@@ -205,6 +222,12 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // Background ping-check of the lists already in the app.
         // Idle only, n/a dropped, ms kept lowest-ping first.
         TugyiPing.testAllAsync()
+        // Ping-gate on open (Hsu, 2026-11-06): check ms FIRST and
+        // only allow VPN on once the check is stable, so the app
+        // never connects to a dead node. While the check runs the
+        // user is told ("Checking nodes…"). Only when disconnected
+        // - while connected the tunnel is already live.
+        if (!DataStore.serviceState.connected) ensurePingReady(selectedCountry)
         // Live speed from MainActivity (1s updates).
         // Fix for the v1.0.2/v1.0.4 build failure: onMainDispatcher is
         // a suspend function and cannot be called from this plain
@@ -213,21 +236,41 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             activity?.runOnUiThread { showSpeed(txRate, rxRate) }
         }
         refreshConnectionStatus()
+        // Ping-gate on app open (Hsu, 2026-11-06): the FIRST time
+        // the home shows in this app process, ping-check ms first
+        // and only allow VPN on once the check is stable, so the
+        // app never connects to a dead node. Later resumes just run
+        // the normal background test (at most every 30 min per
+        // country, forced on a new list).
+        if (!pingGateDone) {
+            pingGateDone = true
+            startPingGate()
+        } else {
+            // Background ping-check of the lists already in the app.
+            // Idle only, n/a dropped, ms kept lowest-ping first.
+            TugyiPing.testAllAsync()
+        }
         // Place the map dots at the REAL location (phone's real
         // location when disconnected, exit location when connected).
         // The IP itself is NOT shown on the home anymore
         // (Hsu, 2026-11-06: remove the IP line).
         refreshMapLocation()
+        // Watch the live tunnel: if traffic stops and the node is
+        // dead, fail over to the next node (Hsu, 2026-11-06).
+        startIdleWatch()
     }
 
     override fun onPause() {
+        idleWatchJob?.cancel()
         (activity as? MainActivity)?.onTugyiSpeedUpdate = null
         TugyiAutoPull.stopWhileOpen()
         super.onPause()
     }
 
     override fun onDestroyView() {
+        idleWatchJob?.cancel()
         watchJob?.cancel()
+        pingGateJob?.cancel()
         super.onDestroyView()
     }
 
@@ -309,16 +352,102 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     // same thing: connect when disconnected, disconnect when
     // connected (tap a country to switch country while connected).
     private fun toggleConnection() {
-        if (DataStore.serviceState.connected) {
+        if (DataStore.serviceState.canStop) {
+            // Connecting OR Connected: this tap means DISCONNECT.
+            // (Bug fix, Hsu 2026-11-06: the old code checked
+            // state.connected, and Connecting.connected is false,
+            // so a tap during "Connecting…" started a NEW connect.)
             session++
+            idleWatchJob?.cancel()
             watchJob?.cancel()
             SagerNet.stopService()
-            refreshConnectionStatus()
+            // Set the Disconnected UI DIRECTLY. stopService() only
+            // sends an async CLOSE broadcast, so the state still
+            // reads Connected right after it - refreshConnectionStatus()
+            // would re-set the green "Connected" label (the old bug).
+            setDisconnectedUi()
             // Back to the phone's real location (map origin dot).
             refreshMapLocation()
             setStatus("Disconnected")
         } else {
             onCountryTapped(selectedCountry)
+        }
+    }
+
+    /** The Disconnected look, set directly (the same as
+     * refreshConnectionStatus()'s disconnected branch). Used when
+     * a tap disconnects: the service state has not updated yet, so
+     * a refresh here would wrongly re-show "Connected". */
+    private fun setDisconnectedUi() {
+        setConnStatus("Disconnected", Color.parseColor("#F44336"))
+        if (::powerBtn.isInitialized) powerBtn.setImageResource(R.drawable.tugyi_power_off)
+        if (::countryPill.isInitialized) countryPill.setTextColor(Color.parseColor("#9E9E9E"))
+        if (::routeMap.isInitialized) routeMap.connected = false
+        refreshPing()
+        showSpeed(0, 0)
+    }
+
+    // Idle watch (Hsu, 2026-11-06: "watch; when it goes idle and
+    // disconnects, reconnect"): while a tunnel is Connected, watch
+    // the live speed (1s updates from MainActivity). If no traffic
+    // at all flows for IDLE_TRIGGER_MS, verify with trafficOk()
+    // (ipinfo, then generate_204). If traffic still flows it was
+    // only idle - reset the timer and stay on this node. If the
+    // node is really dead, fail over to the next node in the SAME
+    // country (up to 5), exactly like the connect-time no-traffic
+    // failover; if none is left, disconnect with "no live node".
+    // WG Tunnel has the same idea as "Seamless Recovery", but it
+    // watches the WireGuard handshake age (stale after 210s) -
+    // Tugyi has no WireGuard handshake (sing-box VLESS/Hy2/SS),
+    // so this watches real traffic instead. The check itself is
+    // harmless: a false alarm only costs one tiny fetch, never a
+    // failover, because failover needs trafficOk() to actually fail.
+    // Runs only while this home screen is visible ("while using");
+    // a manual tap cancels it via the session.
+    private fun startIdleWatch() {
+        idleWatchJob?.cancel()
+        idleWatchJob = runOnDefaultDispatcher {
+            val mySession = session
+            lastTrafficAt = System.currentTimeMillis()
+            while (mySession == session) {
+                delay(IDLE_CHECK_MS)
+                if (mySession != session) return@runOnDefaultDispatcher
+                if (!DataStore.serviceState.connected) continue
+                if (System.currentTimeMillis() - lastTrafficAt < IDLE_TRIGGER_MS) continue
+                if (TugyiIpInfo.trafficOk()) {
+                    lastTrafficAt = System.currentTimeMillis()
+                    continue
+                }
+                // Dead node - but re-check the session first: a
+                // manual tap during the check must win over this
+                // failover.
+                if (mySession != session) return@runOnDefaultDispatcher
+                val country = TugyiPing.connectedCountry() ?: continue
+                val ranked = TugyiPing.rankedIds(country)
+                val ids = TugyiEngine.profileIds(country)
+                // Same order as a tap: ranked first, fresh unranked
+                // nodes after them (see onCountryTapped).
+                val order = if (ranked.isNotEmpty()) ranked + (ids - ranked) else ids
+                val current = order.indexOf(DataStore.selectedProxy)
+                val next = if (current >= 0) current + 1 else 0
+                if (next < order.size && next < 5) {
+                    val nextSession = ++session
+                    onMainDispatcher {
+                        setStatus("${country.code}: no traffic, trying next node…")
+                    }
+                    SagerNet.stopService()
+                    delay(900)
+                    connectToOrder(country, order, next, nextSession)
+                } else {
+                    ++session
+                    SagerNet.stopService()
+                    onMainDispatcher {
+                        setConnStatus("Disconnected", Color.parseColor("#F44336"))
+                        setStatus("${country.code}: no live node")
+                    }
+                }
+                return@runOnDefaultDispatcher
+            }
         }
     }
 
@@ -422,6 +551,8 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             uploadUnitView.text = "mbps"
             return
         }
+        // Any traffic at all resets the idle-watch timer.
+        if (txRate + rxRate > 0) lastTrafficAt = System.currentTimeMillis()
         setSpeed(downloadView, downloadUnitView, rxRate)
         setSpeed(uploadView, uploadUnitView, txRate)
     }
@@ -441,10 +572,39 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         }
     }
 
+    // Ping-gate (Hsu, 2026-11-06: "App opens -> check ms first;
+    // only allow VPN on once it is stable; tell the user while the
+    // ping is running"): a connect is only allowed once this
+    // country's ping ranking is settled. Ready means: the user is
+    // already on this country (the live tunnel proves a node
+    // works), or there is nothing to test yet (the tap will say
+    // "no live node" itself), or a test finished recently.
+    private fun isPingReady(country: TugyiCountry): Boolean {
+        if (TugyiPing.connectedCountry() == country) return true
+        if (TugyiEngine.profileIds(country).isEmpty()) return true
+        return TugyiPing.isRankingFresh(country)
+    }
+
+    /** Returns true when this country's ping ranking is settled.
+     * When not ready it starts (or waits for) the test, tells the
+     * user "Checking nodes…", and refuses the tap - the next tap
+     * after the test settles connects. So the app never connects
+     * to a dead node. */
+    private fun ensurePingReady(country: TugyiCountry): Boolean {
+        if (isPingReady(country)) return true
+        setStatus("Checking nodes…")
+        TugyiPing.testCountryAsync(country, force = true)
+        return false
+    }
+
     private fun onCountryTapped(country: TugyiCountry) {
+        // Ping-gate: do not connect while the open-time ping check
+        // for this country is still running.
+        if (!ensurePingReady(country)) return
         // A new tap cancels any previous failover watch.
         session++
         val mySession = session
+        idleWatchJob?.cancel()
         watchJob?.cancel()
         selectCountry(country)
         setConnStatus("Connecting…", Color.parseColor("#FFC107"))
@@ -478,10 +638,32 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 // it exists, otherwise the engine's order. n/a nodes
                 // are already dropped from the ping ranking.
                 val ranked = TugyiPing.rankedIds(country)
-                val order = if (ranked.isNotEmpty()) ranked else ids
-                // If there is no ranking yet, start a background test
-                // now so the next tap has one.
-                if (ranked.isEmpty()) TugyiPing.testCountryAsync(country)
+                if (ranked.isEmpty()) {
+                    if (TugyiPing.isRankingFresh(country)) {
+                        // The ping-gate already ensured a test ran for
+                        // this country: an empty ranking means the test
+                        // found no live node. Do NOT connect to a dead
+                        // node - report it and re-test in the
+                        // background so a later tap can connect if a
+                        // node comes back.
+                        onMainDispatcher {
+                            setStatus("${country.code}: no live node")
+                        }
+                        TugyiPing.testCountryAsync(country, force = true)
+                        return@runOnDefaultDispatcher
+                    }
+                    // No ranking yet (first run): start a background
+                    // test for the next tap, and connect now in the
+                    // engine's order - the connect watch still
+                    // verifies real traffic and fails over.
+                    TugyiPing.testCountryAsync(country)
+                }
+                // Fresh nodes the ping has not ranked yet go after
+                // the ranked ones, so a list rotation never hides
+                // them: if the ranked nodes fail, the fresh ones are
+                // still tried instead of reporting "no live node"
+                // (Hsu, 2026-11-06).
+                val order = if (ranked.isNotEmpty()) ranked + (ids - ranked) else ids
                 // Connect to the lowest-ping node, with in-country
                 // failover handled by watch.
                 connectToOrder(country, order, 0, mySession)
@@ -551,6 +733,8 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                         // exit location (may differ from the tapped
                         // country, e.g. China).
                         refreshMapLocation()
+                        // Re-arm the idle watch for this new tunnel.
+                        startIdleWatch()
                     }
                     return@runOnDefaultDispatcher
                 }

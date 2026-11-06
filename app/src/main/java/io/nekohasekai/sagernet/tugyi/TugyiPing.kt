@@ -39,7 +39,7 @@ import kotlinx.coroutines.sync.withPermit
  * - The ranked list is saved in SharedPreferences ("tugyi_pro",
  *   key "ping_<CODE>" = comma-separated profile ids, lowest ping
  *   first) so a tap can connect immediately without waiting for a
- *   fresh test. A test is re-run at most every 5 minutes, or after a
+ *   fresh test. A test is re-run at most every 30 minutes, or after a
  *   new list is pulled.
  * - If there is no ping ranking yet (first run, or test never finished),
  *   the tap falls back to the engine's order (#1, #2, ...).
@@ -79,6 +79,15 @@ object TugyiPing {
 
     private fun lastTestAt(country: TugyiCountry): Long =
         TugyiEngine.prefs().getLong(KEY_PING_TIME_PREFIX + country.code, 0L)
+
+    /** True when a ping test for this country finished recently
+     * (within MIN_RETEST_MS), so the ranking is settled. Used by
+     * the ping-gate (Hsu, 2026-11-06): only allow VPN on once the
+     * check is stable. A test that found 0 live nodes still counts
+     * as settled - the tap then says "no live node" instead of
+     * waiting for a test that already ran. */
+    fun isRankingFresh(country: TugyiCountry): Boolean =
+        System.currentTimeMillis() - lastTestAt(country) < MIN_RETEST_MS
 
     private fun saveRanking(country: TugyiCountry, ranked: List<Long>) {
         TugyiEngine.prefs().edit()
