@@ -36,7 +36,10 @@
             android:background="@drawable/tugyi_header_bg">
 
             <!-- Hamburger inside the blue header, like the design.
-                 The pink NekoBox appbar is hidden on this home. -->
+                 The pink NekoBox appbar is hidden on this home.
+                 Hsu 2026-11-06: HIDE this button (visibility gone), do
+                 NOT delete it - view + drawer click listener stay, so
+                 it can come back anytime. -->
             <ImageButton
                 android:id="@+id/tugyi_menu_btn"
                 android:layout_width="48dp"
@@ -47,7 +50,8 @@
                 android:background="@android:color/transparent"
                 android:contentDescription="Menu"
                 android:src="@drawable/ic_navigation_menu"
-                android:tint="#FFFFFF" />
+                android:tint="#FFFFFF"
+                android:visibility="gone" />
 
             <!-- No "VPN" title here: Hsu (2026-11-05) does NOT want the
                  title shown at all. The earlier fix (move the button to
