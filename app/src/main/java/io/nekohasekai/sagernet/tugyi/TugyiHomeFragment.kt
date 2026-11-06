@@ -30,7 +30,6 @@ import io.nekohasekai.sagernet.ui.ToolbarFragment
 import io.nekohasekai.sagernet.ui.VpnRequestActivity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
 /**
@@ -78,13 +77,6 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
          * with trafficOk() and fail over if the node is dead. */
         private const val IDLE_CHECK_MS = 5_000L
         private const val IDLE_TRIGGER_MS = 30_000L
-        /** Ping-gate timeout (Hsu, 2026-11-06): the open-time ping
-         * check releases the gate after 60s at most, so a slow
-         * network can never lock the app forever. */
-        private const val PING_GATE_TIMEOUT_MS = 60_000L
-        /** Ping-gate runs once per app process start (Hsu,
-         * 2026-11-06): app open = fresh ping-check first. */
-        private var pingGateDone = false
     }
 
     private lateinit var connStatusView: TextView
@@ -101,8 +93,6 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private var selectedCountry = TugyiCountry.SG
     private var idleWatchJob: Job? = null
     private var lastTrafficAt = 0L
-    private var pingGateJob: Job? = null
-    private var pingGateRunning = false
 
     private val connect = registerForActivityResult(VpnRequestActivity.StartService()) {
         if (it) setStatus("VPN permission denied")
@@ -236,20 +226,6 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             activity?.runOnUiThread { showSpeed(txRate, rxRate) }
         }
         refreshConnectionStatus()
-        // Ping-gate on app open (Hsu, 2026-11-06): the FIRST time
-        // the home shows in this app process, ping-check ms first
-        // and only allow VPN on once the check is stable, so the
-        // app never connects to a dead node. Later resumes just run
-        // the normal background test (at most every 30 min per
-        // country, forced on a new list).
-        if (!pingGateDone) {
-            pingGateDone = true
-            startPingGate()
-        } else {
-            // Background ping-check of the lists already in the app.
-            // Idle only, n/a dropped, ms kept lowest-ping first.
-            TugyiPing.testAllAsync()
-        }
         // Place the map dots at the REAL location (phone's real
         // location when disconnected, exit location when connected).
         // The IP itself is NOT shown on the home anymore
@@ -270,7 +246,6 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     override fun onDestroyView() {
         idleWatchJob?.cancel()
         watchJob?.cancel()
-        pingGateJob?.cancel()
         super.onDestroyView()
     }
 
