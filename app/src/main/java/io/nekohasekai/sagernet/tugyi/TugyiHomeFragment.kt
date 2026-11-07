@@ -1,5 +1,9 @@
 package io.nekohasekai.sagernet.tugyi
 
+import android.animation.AnimatorSet
+import android.animation.ArgbEvaluator
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.graphics.Color
 import android.os.Bundle
 import android.text.SpannableString
@@ -9,6 +13,7 @@ import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -103,6 +108,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private var idleWatchJob: Job? = null
     private var switchJob: Job? = null
     private var checkingJob: Job? = null
+    private var checkingAnim: AnimatorSet? = null
     private var lastTrafficAt = 0L
 
     private val connect = registerForActivityResult(VpnRequestActivity.StartService()) {
@@ -276,6 +282,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
 
     override fun onPause() {
         checkingJob?.cancel()
+        stopCheckingAnim()
         if (switchJob?.isActive == true) {
             switchJob?.cancel()
             // A region switch was still checking: put the pill back
@@ -293,6 +300,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         watchJob?.cancel()
         switchJob?.cancel()
         checkingJob?.cancel()
+        stopCheckingAnim()
         super.onDestroyView()
     }
 
@@ -308,10 +316,61 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
      * checked.. please wait.." stays on screen while the
      * selected country's ping test runs, and disappears the
      * moment the check finishes - so the user can SEE whether
-     * the check is done. Must run on the main thread. */
+     * the check is done. Must run on the main thread.
+     * Alert style (Hsu, 2026-11-07, "အကုန်ထည့်"): while it is
+     * up, the line is animated all three ways at once so the
+     * user cannot miss it - it fades bright/dim, its colour
+     * pulses amber <-> red, and it rises up and settles back
+     * down, repeating every second until the check finishes.
+     * The animation is stopped and the line reset the moment
+     * the check finishes, and also when the home is hidden. */
     private fun setCheckingVisible(visible: Boolean) {
+        if (!::checkingText.isInitialized) return
+        if (visible) {
+            checkingText.visibility = View.VISIBLE
+            if (checkingAnim?.isRunning == true) return
+            val risePx = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 10f, resources.displayMetrics
+            )
+            val fade = ObjectAnimator.ofFloat(checkingText, View.ALPHA, 1f, 0.3f, 1f).apply {
+                duration = 1000L
+                repeatCount = ValueAnimator.INFINITE
+            }
+            val colour = ValueAnimator.ofObject(
+                ArgbEvaluator(),
+                Color.parseColor("#FF8F00"), Color.parseColor("#F44336"),
+                Color.parseColor("#FF8F00")
+            ).apply {
+                duration = 1000L
+                repeatCount = ValueAnimator.INFINITE
+                addUpdateListener { checkingText.setTextColor(it.animatedValue as Int) }
+            }
+            val rise = ObjectAnimator.ofFloat(
+                checkingText, View.TRANSLATION_Y, 0f, -risePx, 0f
+            ).apply {
+                duration = 1000L
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = AccelerateDecelerateInterpolator()
+            }
+            checkingAnim = AnimatorSet().apply {
+                playTogether(fade, colour, rise)
+                start()
+            }
+        } else {
+            stopCheckingAnim()
+            checkingText.visibility = View.GONE
+        }
+    }
+
+    /** Stop the checking-line alert animation and put the line
+     * back to its plain state (full alpha, no offset, amber). */
+    private fun stopCheckingAnim() {
+        checkingAnim?.cancel()
+        checkingAnim = null
         if (::checkingText.isInitialized) {
-            checkingText.visibility = if (visible) View.VISIBLE else View.GONE
+            checkingText.alpha = 1f
+            checkingText.translationY = 0f
+            checkingText.setTextColor(Color.parseColor("#FF8F00"))
         }
     }
 
