@@ -5,6 +5,7 @@ import android.animation.ArgbEvaluator
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
@@ -15,6 +16,7 @@ import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
 import android.widget.ImageButton
@@ -159,6 +161,19 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         duMonthView = view.findViewById(R.id.tugyi_du_month)
         duTotalView = view.findViewById(R.id.tugyi_du_total)
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
+        // Drop shadow under the power button, in BOTH states
+        // (Hsu, 2026-11-07, "Shadaw": the shadow goes on the
+        // green ring too). The layout already gives the button
+        // elevation 8dp, but on Hsu's phone no shadow showed
+        // under it. An explicit oval outline makes the elevation
+        // render a soft circular shadow under the button, red
+        // and green alike. Set once here; it survives the ring
+        // background being replaced by setPowerRingColor().
+        powerBtn.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setOval(0, 0, view.width, view.height)
+            }
+        }
         routeMap = view.findViewById(R.id.tugyi_map)
         // Uniform shrink (Hsu, 2026-11-06): the WHOLE Home UI
         // shrinks/grows uniformly on smaller/bigger phones. Applied
@@ -381,7 +396,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 }
                 val colour = ValueAnimator.ofObject(
                     ArgbEvaluator(),
-                    Color.parseColor("#FF8F00"), Color.parseColor("#F44336"),
+                    Color.parseColor("#FF8F00"), Color.parseColor("#D32F2F"),
                     Color.parseColor("#FF8F00")
                 ).apply {
                     duration = 1000L
@@ -436,7 +451,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         val ringColor = when (state) {
             BaseService.State.Connected -> Color.parseColor("#43A047")
             BaseService.State.Connecting -> Color.parseColor("#FFC107")
-            else -> Color.parseColor("#F44336")
+            else -> Color.parseColor("#D32F2F")
         }
         setPowerRingColor(ringColor)
     }
@@ -612,7 +627,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
      * a tap disconnects: the service state has not updated yet, so
      * a refresh here would wrongly re-show "Connected". */
     private fun setDisconnectedUi() {
-        setConnStatus("Disconnected", Color.parseColor("#F44336"))
+        setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
         if (::powerBtn.isInitialized) powerBtn.setImageResource(R.drawable.tugyi_power_off)
         if (::countryPill.isInitialized) countryPill.setTextColor(Color.parseColor("#9E9E9E"))
         if (::routeMap.isInitialized) routeMap.connected = false
@@ -680,7 +695,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                     ++session
                     SagerNet.stopService()
                     onMainDispatcher {
-                        setConnStatus("Disconnected", Color.parseColor("#F44336"))
+                        setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
                         setStatus("${country.code}: no live node")
                     }
                 }
@@ -716,7 +731,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 setConnStatus("Connecting…", Color.parseColor("#FFC107"))
             }
             else -> {
-                setConnStatus("Disconnected", Color.parseColor("#F44336"))
+                setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
                 if (::powerBtn.isInitialized) powerBtn.setImageResource(R.drawable.tugyi_power_off)
                 if (::countryPill.isInitialized) countryPill.setTextColor(Color.parseColor("#9E9E9E"))
                 if (::routeMap.isInitialized) routeMap.connected = false
@@ -961,7 +976,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 }
                 if (ids.isEmpty()) {
                     onMainDispatcher {
-                        setConnStatus("Disconnected", Color.parseColor("#F44336"))
+                        setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
                         setStatus("${country.code}: no live node")
                     }
                     return@runOnDefaultDispatcher
@@ -1001,7 +1016,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 connectToOrder(country, order, 0, mySession)
             } catch (e: Exception) {
                 onMainDispatcher {
-                    setConnStatus("Disconnected", Color.parseColor("#F44336"))
+                    setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
                     setStatus("${country.code}: ${e.message}")
                 }
             }
@@ -1052,7 +1067,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                         } else {
                             SagerNet.stopService()
                             onMainDispatcher {
-                                setConnStatus("Disconnected", Color.parseColor("#F44336"))
+                                setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
                                 setStatus("${country.code}: no live node")
                             }
                         }
@@ -1077,7 +1092,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                         connectToOrder(country, order, index + 1, mySession)
                     } else {
                         onMainDispatcher {
-                            setConnStatus("Disconnected", Color.parseColor("#F44336"))
+                            setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
                             setStatus("${country.code}: no live node")
                         }
                     }
