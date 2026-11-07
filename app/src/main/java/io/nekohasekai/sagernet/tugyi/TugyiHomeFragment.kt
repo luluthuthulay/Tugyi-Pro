@@ -433,12 +433,16 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
      * outer oval in the ring colour with a white oval inset by
      * the stroke width on top of it. */
     private fun setPowerRing(state: BaseService.State) {
-        if (!::powerBtn.isInitialized) return
         val ringColor = when (state) {
             BaseService.State.Connected -> Color.parseColor("#43A047")
             BaseService.State.Connecting -> Color.parseColor("#FFC107")
             else -> Color.parseColor("#F44336")
         }
+        setPowerRingColor(ringColor)
+    }
+
+    private fun setPowerRingColor(ringColor: Int) {
+        if (!::powerBtn.isInitialized) return
         val strokePx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP, 5f, resources.displayMetrics
         ).toInt()
@@ -558,6 +562,22 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         )
         connStatusView.text = s
+        // Ring follows the status text (Hsu, 2026-11-07, v1.0.26
+        // fix: after a tap-disconnect the status said
+        // "Disconnected" but the ring stayed green). The ring
+        // must never disagree with the status: every direct
+        // setConnStatus("Disconnected") call - tap disconnect,
+        // idle-watch no-live-node, failover end - turns the ring
+        // red too. The dot colour already encodes the state, so
+        // the ring colour is mapped from it (Connected dot
+        // #4CAF50 -> ring green #43A047, the mockup's green;
+        // amber and red are the same for dot and ring).
+        val ringColor = when (dotColor) {
+            Color.parseColor("#4CAF50") -> Color.parseColor("#43A047")
+            else -> dotColor
+        }
+        setPowerRingColor(ringColor)
+        updatePowerSpin()
     }
 
     // Power button and Connected/Disconnected status text do the
@@ -596,7 +616,12 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         if (::powerBtn.isInitialized) powerBtn.setImageResource(R.drawable.tugyi_power_off)
         if (::countryPill.isInitialized) countryPill.setTextColor(Color.parseColor("#9E9E9E"))
         if (::routeMap.isInitialized) routeMap.connected = false
-        refreshPing()
+        // ms is "--" here, NOT refreshPing(): the service state
+        // still reads Connected right after stopService() (async),
+        // so refreshPing() would show the old node's stale ms
+        // (Hsu's 2026-11-07 screenshot: Disconnected with 145 ms).
+        // The ring is set by setConnStatus() above (v1.0.26).
+        if (::pingView.isInitialized) pingView.text = "--"
         showSpeed(0, 0)
     }
 
