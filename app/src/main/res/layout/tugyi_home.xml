@@ -81,6 +81,25 @@
                 android:textColor="#FFFFFF"
                 android:textSize="18sp" />
 
+            <!-- Ping-check notice (Hsu, 2026-11-06; v1.0.25 moved
+                 here from under the country pill, Hsu 2026-11-07):
+                 under the status text inside the blue header, 20dp
+                 below it at rest (10dp while the rise animation
+                 lifts it). GONE by default; the fragment shows it
+                 while TugyiPing.isTesting(selectedCountry) and hides
+                 it the moment the check finishes. -->
+            <TextView
+                android:id="@+id/tugyi_checking_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_below="@id/tugyi_conn_status"
+                android:layout_centerHorizontal="true"
+                android:layout_marginTop="20dp"
+                android:text="Nodes are being checked.. please wait.."
+                android:textColor="#FF8F00"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
         </RelativeLayout>
 
         <!-- Speed header: the label with the connected node's ms beside
@@ -194,6 +213,93 @@
 
         </LinearLayout>
 
+        <!-- Data usage (Hsu, 2026-11-07, v1.0.25): three small
+             columns above "Location" - Today / This Month / Total,
+             one combined download+upload number each. Counters
+             start at 0 on first use. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Today"
+                    android:textColor="#9E9E9E"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/tugyi_du_today"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="--"
+                    android:textColor="#212121"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="This Month"
+                    android:textColor="#9E9E9E"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/tugyi_du_month"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="--"
+                    android:textColor="#212121"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Total"
+                    android:textColor="#9E9E9E"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/tugyi_du_total"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="--"
+                    android:textColor="#212121"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -238,25 +344,6 @@
             android:textColor="#212121"
             android:textSize="18sp"
             android:textStyle="bold" />
-
-        <!-- Ping-check notice (Hsu, 2026-11-06): while the nodes
-             are being ping-checked, this line stays on screen so
-             the user can SEE the check is still running - the old
-             "Checking nodes…" toast vanished after ~2s, so nobody
-             could tell whether the check was done or not. GONE by
-             default; the fragment shows it while
-             TugyiPing.isTesting(selectedCountry) and hides it the
-             moment the check finishes. -->
-        <TextView
-            android:id="@+id/tugyi_checking_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="8dp"
-            android:text="Nodes are being checked.. please wait.."
-            android:textColor="#FF8F00"
-            android:textSize="14sp"
-            android:visibility="gone" />
 
         <!-- Credit line at the very bottom of the home (Hsu, 2026-11-05). -->
         <TextView

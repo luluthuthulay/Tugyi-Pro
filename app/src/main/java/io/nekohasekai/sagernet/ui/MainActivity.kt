@@ -405,9 +405,11 @@ class MainActivity : ThemedActivity(),
     val connection = SagerConnection(SagerConnection.CONNECTION_ID_MAIN_ACTIVITY_FOREGROUND, true)
 
     // Tugyi home shows its own live speed (Mbps) in the fragment, so
-    // MainActivity forwards the 1s speed updates to it. Null when the
-    // Tugyi home is not visible.
-    var onTugyiSpeedUpdate: ((txRate: Long, rxRate: Long) -> Unit)? = null
+    // MainActivity forwards the 1s speed updates to it, plus the
+    // service's per-session totals (txTotal/rxTotal) so the home can
+    // count data usage (TugyiDataUsage). Null when the Tugyi home is
+    // not visible.
+    var onTugyiSpeedUpdate: ((txRate: Long, rxRate: Long, txTotal: Long, rxTotal: Long) -> Unit)? = null
     override fun onServiceConnected(service: ISagerNetService) = changeState(
         try {
             BaseService.State.values()[service.state]
@@ -430,7 +432,7 @@ class MainActivity : ThemedActivity(),
     // ONLY do UI update here, write DB in bg process
     override fun cbSpeedUpdate(stats: SpeedDisplayData) {
         binding.stats.updateSpeed(stats.txRateProxy, stats.rxRateProxy)
-        onTugyiSpeedUpdate?.invoke(stats.txRateProxy, stats.rxRateProxy)
+        onTugyiSpeedUpdate?.invoke(stats.txRateProxy, stats.rxRateProxy, stats.txTotal, stats.rxTotal)
     }
 
     override fun cbTrafficUpdate(data: TrafficData) {

@@ -5,6 +5,8 @@ import android.animation.ArgbEvaluator
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
 import android.text.SpannableString
 import android.text.Spanned
@@ -14,6 +16,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.LinearInterpolator
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -109,6 +112,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private var switchJob: Job? = null
     private var checkingJob: Job? = null
     private var checkingAnim: AnimatorSet? = null
+    private var spinAnim: ObjectAnimator? = null
+    private lateinit var duTodayView: TextView
+    private lateinit var duMonthView: TextView
+    private lateinit var duTotalView: TextView
     private var lastTrafficAt = 0L
 
     private val connect = registerForActivityResult(VpnRequestActivity.StartService()) {
@@ -148,6 +155,9 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         uploadUnitView = view.findViewById(R.id.tugyi_upload_unit)
         countryPill = view.findViewById(R.id.tugyi_country_pill)
         checkingText = view.findViewById(R.id.tugyi_checking_text)
+        duTodayView = view.findViewById(R.id.tugyi_du_today)
+        duMonthView = view.findViewById(R.id.tugyi_du_month)
+        duTotalView = view.findViewById(R.id.tugyi_du_total)
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
         routeMap = view.findViewById(R.id.tugyi_map)
         // Uniform shrink (Hsu, 2026-11-06): the WHOLE Home UI
@@ -166,6 +176,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         connStatusView.setOnClickListener { toggleConnection() }
         selectCountry(selectedCountry)
         refreshConnectionStatus()
+        refreshDataUsage()
     }
 
     // Uniform shrink (Hsu, 2026-11-06): the WHOLE Home UI must
@@ -266,10 +277,15 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // Fix for the v1.0.2/v1.0.4 build failure: onMainDispatcher is
         // a suspend function and cannot be called from this plain
         // lambda. Post to the main thread instead.
-        (activity as? MainActivity)?.onTugyiSpeedUpdate = { txRate, rxRate ->
-            activity?.runOnUiThread { showSpeed(txRate, rxRate) }
+        (activity as? MainActivity)?.onTugyiSpeedUpdate = { txRate, rxRate, txTotal, rxTotal ->
+            TugyiDataUsage.addSessionTotals(txTotal, rxTotal)
+            activity?.runOnUiThread {
+                showSpeed(txRate, rxRate)
+                refreshDataUsage()
+            }
         }
         refreshConnectionStatus()
+        refreshDataUsage()
         // Place the map dots at the REAL location (phone's real
         // location when disconnected, exit location when connected).
         // The IP itself is NOT shown on the home anymore
@@ -283,6 +299,8 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     override fun onPause() {
         checkingJob?.cancel()
         stopCheckingAnim()
+        stopPowerSpin()
+        TugyiDataUsage.persist()
         if (switchJob?.isActive == true) {
             switchJob?.cancel()
             // A region switch was still checking: put the pill back
@@ -301,6 +319,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         switchJob?.cancel()
         checkingJob?.cancel()
         stopCheckingAnim()
+        stopPowerSpin()
         super.onDestroyView()
     }
 
@@ -328,37 +347,66 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         if (!::checkingText.isInitialized) return
         if (visible) {
             checkingText.visibility = View.VISIBLE
+            updatePowerSpin()
             if (checkingAnim?.isRunning == true) return
-            val risePx = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 10f, resources.displayMetrics
-            )
-            val fade = ObjectAnimator.ofFloat(checkingText, View.ALPHA, 1f, 0.3f, 1f).apply {
-                duration = 1000L
-                repeatCount = ValueAnimator.INFINITE
-            }
-            val colour = ValueAnimator.ofObject(
-                ArgbEvaluator(),
-                Color.parseColor("#FF8F00"), Color.parseColor("#F44336"),
-                Color.parseColor("#FF8F00")
-            ).apply {
-                duration = 1000L
-                repeatCount = ValueAnimator.INFINITE
-                addUpdateListener { checkingText.setTextColor(it.animatedValue as Int) }
-            }
-            val rise = ObjectAnimator.ofFloat(
-                checkingText, View.TRANSLATION_Y, 0f, -risePx, 0f
-            ).apply {
-                duration = 1000L
-                repeatCount = ValueAnimator.INFINITE
-                interpolator = AccelerateDecelerateInterpolator()
-            }
-            checkingAnim = AnimatorSet().apply {
-                playTogether(fade, colour, rise)
-                start()
+            // Pop-in entrance (Hsu, v1.0.25): the line pops in
+            // (scale 0.8 -> 1.0 + fade) when it appears, then the
+            // alert animation takes over. One sequential set:
+            // pop first, alert after, so a hide cancels both
+            // together. Pivot is set after layout - the view was
+            // GONE, so its size is 0 until the next layout pass.
+            checkingText.alpha = 0f
+            checkingText.scaleX = 0.8f
+            checkingText.scaleY = 0.8f
+            checkingText.post {
+                if (!::checkingText.isInitialized) return@post
+                if (checkingText.visibility != View.VISIBLE) return@post
+                if (checkingAnim?.isRunning == true) return@post
+                checkingText.pivotX = checkingText.width / 2f
+                checkingText.pivotY = checkingText.height / 2f
+                val pop = AnimatorSet().apply {
+                    playTogether(
+                        ObjectAnimator.ofFloat(checkingText, View.ALPHA, 0f, 1f),
+                        ObjectAnimator.ofFloat(checkingText, View.SCALE_X, 0.8f, 1f),
+                        ObjectAnimator.ofFloat(checkingText, View.SCALE_Y, 0.8f, 1f)
+                    )
+                    duration = 250L
+                }
+                val risePx = TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, 10f, resources.displayMetrics
+                )
+                val fade = ObjectAnimator.ofFloat(checkingText, View.ALPHA, 1f, 0.3f, 1f).apply {
+                    duration = 1000L
+                    repeatCount = ValueAnimator.INFINITE
+                }
+                val colour = ValueAnimator.ofObject(
+                    ArgbEvaluator(),
+                    Color.parseColor("#FF8F00"), Color.parseColor("#F44336"),
+                    Color.parseColor("#FF8F00")
+                ).apply {
+                    duration = 1000L
+                    repeatCount = ValueAnimator.INFINITE
+                    addUpdateListener { checkingText.setTextColor(it.animatedValue as Int) }
+                }
+                val rise = ObjectAnimator.ofFloat(
+                    checkingText, View.TRANSLATION_Y, 0f, -risePx, 0f
+                ).apply {
+                    duration = 1000L
+                    repeatCount = ValueAnimator.INFINITE
+                    interpolator = AccelerateDecelerateInterpolator()
+                }
+                val alert = AnimatorSet().apply {
+                    playTogether(fade, colour, rise)
+                }
+                checkingAnim = AnimatorSet().apply {
+                    playSequentially(pop, alert)
+                    start()
+                }
             }
         } else {
             stopCheckingAnim()
             checkingText.visibility = View.GONE
+            updatePowerSpin()
         }
     }
 
@@ -370,8 +418,80 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         if (::checkingText.isInitialized) {
             checkingText.alpha = 1f
             checkingText.translationY = 0f
+            checkingText.scaleX = 1f
+            checkingText.scaleY = 1f
             checkingText.setTextColor(Color.parseColor("#FF8F00"))
         }
+    }
+
+    /** Power-button ring (Hsu, 2026-11-07, v1.0.25): red while
+     * disconnected, green while connected - the same colours as
+     * the status dot (ring green #43A047 is the mockup's green).
+     * Amber while connecting was not specified by Hsu; it matches
+     * the "Connecting…" dot already in the app. The ring is a 5dp
+     * stroke just outside the white button, like the mockup: an
+     * outer oval in the ring colour with a white oval inset by
+     * the stroke width on top of it. */
+    private fun setPowerRing(state: BaseService.State) {
+        if (!::powerBtn.isInitialized) return
+        val ringColor = when (state) {
+            BaseService.State.Connected -> Color.parseColor("#43A047")
+            BaseService.State.Connecting -> Color.parseColor("#FFC107")
+            else -> Color.parseColor("#F44336")
+        }
+        val strokePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 5f, resources.displayMetrics
+        ).toInt()
+        val ring = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(ringColor)
+        }
+        val inner = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.WHITE)
+        }
+        val layers = LayerDrawable(arrayOf(ring, inner))
+        layers.setLayerInset(1, strokePx, strokePx, strokePx, strokePx)
+        powerBtn.background = layers
+    }
+
+    /** Power-button spin (Hsu, 2026-11-07, v1.0.25): the button
+     * spins ONLY while a ms check runs AND the tunnel is
+     * disconnected - the app-open check. It stops the moment the
+     * check finishes or the tunnel connects, so during a region
+     * switch check (old tunnel still Connected) it never spins. */
+    private fun updatePowerSpin() {
+        if (!::powerBtn.isInitialized) return
+        val shouldSpin = ::checkingText.isInitialized &&
+            checkingText.visibility == View.VISIBLE &&
+            !DataStore.serviceState.connected
+        if (shouldSpin) {
+            if (spinAnim?.isRunning == true) return
+            spinAnim = ObjectAnimator.ofFloat(powerBtn, View.ROTATION, 0f, 360f).apply {
+                duration = 1000L
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = LinearInterpolator()
+                start()
+            }
+        } else {
+            stopPowerSpin()
+        }
+    }
+
+    private fun stopPowerSpin() {
+        spinAnim?.cancel()
+        spinAnim = null
+        if (::powerBtn.isInitialized) powerBtn.rotation = 0f
+    }
+
+    /** Data usage (Hsu, 2026-11-07, v1.0.25): three small
+     * numbers above "Location" - Today / This Month / Total.
+     * Counters start at 0 on first use and only grow. */
+    private fun refreshDataUsage() {
+        if (!::duTodayView.isInitialized) return
+        duTodayView.text = TugyiDataUsage.format(TugyiDataUsage.todayBytes())
+        duMonthView.text = TugyiDataUsage.format(TugyiDataUsage.monthBytes())
+        duTotalView.text = TugyiDataUsage.format(TugyiDataUsage.totalBytes())
     }
 
     private fun countryLabel(country: TugyiCountry): String =
@@ -546,6 +666,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
 
     private fun refreshConnectionStatus() {
         if (!::connStatusView.isInitialized) return
+        setPowerRing(DataStore.serviceState)
         when (DataStore.serviceState) {
             BaseService.State.Connected -> {
                 TugyiPing.connectedCountry()?.let { selectCountry(it) }
@@ -578,6 +699,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 showSpeed(0, 0)
             }
         }
+        updatePowerSpin()
     }
 
     /**
