@@ -36,6 +36,12 @@ import io.nekohasekai.sagernet.database.DataStore
 import moe.matsuri.nb4a.utils.Util
 import org.json.JSONObject
 
+// Tugyi Pro (Hsu, 2026-11-08): the release tag of THIS build.
+// checkUpdate compares the latest Tugyi-Pro release tag against it,
+// because Tugyi releases are named v1.0.x while VERSION_NAME stays 1.4.2.
+// Bump this to the new tag on every release push.
+private const val TUGYI_VERSION_TAG = "v1.0.28"
+
 class AboutFragment : ToolbarFragment(R.layout.layout_about) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -83,7 +89,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                                 .subText(SagerNet.appVersionNameForDisplay)
                                 .setOnClickAction {
                                     requireContext().launchCustomTab(
-                                        "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases"
+                                        "https://github.com/luluthuthulay/Tugyi-Pro/releases"
                                     )
                                 }
                                 .build())
@@ -92,13 +98,6 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                                 .text(R.string.check_update_release)
                                 .setOnClickAction {
                                     checkUpdate(false)
-                                }
-                                .build())
-                        .addItem(
-                            MaterialAboutActionItem.Builder()
-                                .text(R.string.check_update_preview)
-                                .setOnClickAction {
-                                    checkUpdate(true)
                                 }
                                 .build())
                         .addItem(
@@ -183,7 +182,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                                 .text(R.string.github)
                                 .setOnClickAction {
                                     requireContext().launchCustomTab(
-                                        "https://github.com/MatsuriDayo/NekoBoxForAndroid"
+                                        "https://github.com/luluthuthulay/Tugyi-Pro"
 
                                     )
                                 }
@@ -220,13 +219,14 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                     }
                     val response = client.newRequest().apply {
                         if (checkPreview) {
-                            setURL("https://api.github.com/repos/MatsuriDayo/NekoBoxForAndroid/releases/tags/preview")
+                            setURL("https://api.github.com/repos/luluthuthulay/Tugyi-Pro/releases/tags/preview")
                         } else {
-                            setURL("https://api.github.com/repos/MatsuriDayo/NekoBoxForAndroid/releases/latest")
+                            setURL("https://api.github.com/repos/luluthuthulay/Tugyi-Pro/releases/latest")
                         }
                     }.execute()
                     val release = JSONObject(Util.getStringBox(response.contentString))
                     val releaseName = release.getString("name")
+                    val releaseTag = release.optString("tag_name", "")
                     val releaseUrl = release.getString("html_url")
                     var haveUpdate = releaseName.isNotBlank()
                     haveUpdate = if (isPreview) {
@@ -237,11 +237,12 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                             haveUpdate && releaseName != BuildConfig.VERSION_NAME
                         }
                     } else {
-                        // User: 1.4.0 Preview: pre-1.4.0 -> No update
-                        // User: 1.4.0 Preview: pre-1.4.1 -> Update
-                        // User: 1.4.0 Stable: 1.4.0 -> No update
-                        // User: 1.4.0 Stable: 1.4.1 -> Update
-                        haveUpdate && !releaseName.contains(BuildConfig.VERSION_NAME)
+                        // Tugyi Pro (Hsu, 2026-11-08): Tugyi releases are
+                        // named by tag (v1.0.x) while VERSION_NAME stays
+                        // 1.4.2, so compare the release tag against this
+                        // build's Tugyi tag instead. Otherwise the check
+                        // would always report an update available.
+                        haveUpdate && releaseTag.isNotBlank() && releaseTag != TUGYI_VERSION_TAG
                     }
                     runOnMainDispatcher {
                         if (haveUpdate) {
