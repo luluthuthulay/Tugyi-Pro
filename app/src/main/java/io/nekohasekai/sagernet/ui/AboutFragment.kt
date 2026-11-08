@@ -24,6 +24,7 @@ import io.nekohasekai.sagernet.BuildConfig
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.databinding.LayoutAboutBinding
 import io.nekohasekai.sagernet.ktx.*
+import io.nekohasekai.sagernet.tugyi.TugyiUpdateService
 import io.nekohasekai.sagernet.plugin.PluginManager.loadString
 import io.nekohasekai.sagernet.utils.PackageCache
 import io.nekohasekai.sagernet.widget.ListListener
@@ -36,11 +37,11 @@ import io.nekohasekai.sagernet.database.DataStore
 import moe.matsuri.nb4a.utils.Util
 import org.json.JSONObject
 
-// Tugyi Pro (Hsu, 2026-11-08): the release tag of THIS build.
-// checkUpdate compares the latest Tugyi-Pro release tag against it,
-// because Tugyi releases are named v1.0.x while VERSION_NAME stays 1.4.2.
-// Bump this to the new tag on every release push.
-private const val TUGYI_VERSION_TAG = "v1.0.28"
+// Tugyi Pro (Hsu, 2026-11-08): the release tag of THIS build lives
+// in TugyiUpdateService.TUGYI_VERSION_TAG (single source of truth;
+// bump it to the new tag on every release push). checkUpdate
+// compares the latest Tugyi-Pro release tag against it, because
+// Tugyi releases are named v1.0.x while VERSION_NAME stays 1.4.2.
 
 class AboutFragment : ToolbarFragment(R.layout.layout_about) {
 
@@ -242,7 +243,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                         // 1.4.2, so compare the release tag against this
                         // build's Tugyi tag instead. Otherwise the check
                         // would always report an update available.
-                        haveUpdate && releaseTag.isNotBlank() && releaseTag != TUGYI_VERSION_TAG
+                        haveUpdate && releaseTag.isNotBlank() && releaseTag != TugyiUpdateService.TUGYI_VERSION_TAG
                     }
                     runOnMainDispatcher {
                         if (haveUpdate) {

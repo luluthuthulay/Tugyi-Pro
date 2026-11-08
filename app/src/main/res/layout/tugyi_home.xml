@@ -324,6 +324,126 @@
             android:layout_marginRight="24dp"
             android:contentDescription="World map with route" />
 
+        <!-- Update strip (Hsu, 2026-11-08, v1.0.29): Phoenix-style
+             in-app update, ABOVE the country pill (Hsu's pick).
+             GONE by default — when no update exists the home is
+             exactly as before. Shown only when a newer Tugyi
+             release is found (UPDATE), while downloading (progress
+             + CANCEL), or on error (RETRY + CLOSE). Tapping UPDATE
+             downloads the APK in the app and opens the system
+             installer; the browser is never involved. The map
+             above (weight 1) absorbs the strip's height, so the
+             pill stays at the bottom. -->
+        <LinearLayout
+            android:id="@+id/tugyi_update_strip"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="24dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginRight="24dp"
+            android:background="@drawable/tugyi_update_strip_bg"
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="↑"
+                    android:textColor="#1E88E5"
+                    android:textSize="16sp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tugyi_update_title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="v1.0.29 update available"
+                        android:textColor="#212121"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tugyi_update_subtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="App keeps working — update when ready"
+                        android:textColor="#757575"
+                        android:textSize="12sp" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tugyi_update_btn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:padding="8dp"
+                    android:text="UPDATE"
+                    android:textColor="#1E88E5"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tugyi_update_cancel_btn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:padding="8dp"
+                    android:text="CANCEL"
+                    android:textColor="#757575"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tugyi_update_retry_btn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:padding="8dp"
+                    android:text="RETRY"
+                    android:textColor="#1E88E5"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tugyi_update_close_btn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:padding="8dp"
+                    android:text="CLOSE"
+                    android:textColor="#757575"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
+            <ProgressBar
+                android:id="@+id/tugyi_update_progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="4dp"
+                android:layout_marginTop="8dp"
+                android:max="100"
+                android:progress="0"
+                android:progressTint="#1E88E5"
+                android:progressBackgroundTint="#E0E0E0"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
         <!-- Country pill only, exactly like the design (Hsu, 2026-11-05).
              No separate SG/JP/US buttons: regions are NOT hardcoded in
              the layout. Tapping the pill opens the region list, built

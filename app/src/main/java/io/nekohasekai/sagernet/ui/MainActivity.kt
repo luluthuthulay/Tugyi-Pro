@@ -77,6 +77,21 @@ class MainActivity : ThemedActivity(),
         }
         navigation.setNavigationItemSelectedListener(this)
 
+        // Tugyi Pro menu (Hsu, 2026-11-08, v1.0.29): the drawer
+        // keeps ONLY Settings. The rest are hidden, not deleted -
+        // the fragments and their code stay, so they can come back.
+        // The update now lives on the home strip, so About (with
+        // its Check update) is no longer needed in the menu.
+        navigation.menu.findItem(R.id.nav_configuration)?.isVisible = false
+        navigation.menu.findItem(R.id.nav_group)?.isVisible = false
+        navigation.menu.findItem(R.id.nav_route)?.isVisible = false
+        navigation.menu.findItem(R.id.nav_logcat)?.isVisible = false
+        navigation.menu.findItem(R.id.nav_traffic)?.isVisible = false
+        navigation.menu.findItem(R.id.nav_tools)?.isVisible = false
+        navigation.menu.findItem(R.id.nav_tuiguang)?.isVisible = false
+        navigation.menu.findItem(R.id.nav_faq)?.isVisible = false
+        navigation.menu.findItem(R.id.nav_about)?.isVisible = false
+
         if (savedInstanceState == null) {
             // Tugyi Pro home: ONLY SG, JP, US. The old node-list
             // ConfigurationFragment is kept in code, but is no longer

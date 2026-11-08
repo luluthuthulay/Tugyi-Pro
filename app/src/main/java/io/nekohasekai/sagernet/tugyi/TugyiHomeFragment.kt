@@ -4,11 +4,15 @@ import android.animation.AnimatorSet
 import android.animation.ArgbEvaluator
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -21,8 +25,11 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.core.view.GravityCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -40,6 +47,7 @@ import io.nekohasekai.sagernet.ui.ToolbarFragment
 import io.nekohasekai.sagernet.ui.VpnRequestActivity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import java.io.File
 import java.util.Locale
 
 /**
@@ -120,9 +128,36 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private lateinit var duTotalView: TextView
     private var lastTrafficAt = 0L
 
+    // In-app update strip (Hsu, 2026-11-08, v1.0.29): Phoenix-style.
+    // The strip shows only when a newer Tugyi release exists.
+    private lateinit var updateStrip: LinearLayout
+    private lateinit var updateTitleView: TextView
+    private lateinit var updateSubtitleView: TextView
+    private lateinit var updateBtn: TextView
+    private lateinit var updateCancelBtn: TextView
+    private lateinit var updateRetryBtn: TextView
+    private lateinit var updateCloseBtn: TextView
+    private lateinit var updateProgressBar: ProgressBar
+    private var updateJob: Job? = null
+    private var updatePhase = UpdatePhase.IDLE
+    private var latestRelease: TugyiUpdateService.ReleaseInfo? = null
+    private var pendingApk: File? = null
+    private var installRequest: File? = null
+
+    private enum class UpdatePhase { IDLE, AVAILABLE, DOWNLOADING, READY, ERROR }
+
     private val connect = registerForActivityResult(VpnRequestActivity.StartService()) {
         if (it) setStatus("VPN permission denied")
     }
+
+    // One-time "allow installs from this app" grant: on return,
+    // install the waiting APK if the grant now exists.
+    private val installGrant =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            if (requireContext().packageManager.canRequestPackageInstalls()) {
+                pendingApk?.let { launchInstaller(it) }
+            }
+        }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -160,6 +195,18 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         duTodayView = view.findViewById(R.id.tugyi_du_today)
         duMonthView = view.findViewById(R.id.tugyi_du_month)
         duTotalView = view.findViewById(R.id.tugyi_du_total)
+        updateStrip = view.findViewById(R.id.tugyi_update_strip)
+        updateTitleView = view.findViewById(R.id.tugyi_update_title)
+        updateSubtitleView = view.findViewById(R.id.tugyi_update_subtitle)
+        updateBtn = view.findViewById(R.id.tugyi_update_btn)
+        updateCancelBtn = view.findViewById(R.id.tugyi_update_cancel_btn)
+        updateRetryBtn = view.findViewById(R.id.tugyi_update_retry_btn)
+        updateCloseBtn = view.findViewById(R.id.tugyi_update_close_btn)
+        updateProgressBar = view.findViewById(R.id.tugyi_update_progress)
+        updateBtn.setOnClickListener { startUpdate() }
+        updateCancelBtn.setOnClickListener { cancelUpdate() }
+        updateRetryBtn.setOnClickListener { startUpdate() }
+        updateCloseBtn.setOnClickListener { closeUpdate() }
         powerBtn = view.findViewById(R.id.tugyi_power_btn)
         // Drop shadow under the power button, in BOTH states
         // (Hsu, 2026-11-07, "Shadaw": the shadow goes on the
@@ -256,6 +303,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // Background ping-check of the lists already in the app.
         // Idle only, n/a dropped, ms kept lowest-ping first.
         TugyiPing.testAllAsync()
+        // In-app update (Hsu, 2026-11-08, v1.0.29): check GitHub
+        // latest on every open; the strip shows only when a newer
+        // Tugyi release exists.
+        checkForUpdate()
         // Ping-gate on open (Hsu, 2026-11-06): check ms FIRST and
         // only allow VPN on once the check is stable, so the app
         // never connects to a dead node. While the check runs the
@@ -333,6 +384,7 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         watchJob?.cancel()
         switchJob?.cancel()
         checkingJob?.cancel()
+        updateJob?.cancel()
         stopCheckingAnim()
         stopPowerSpin()
         super.onDestroyView()
@@ -343,6 +395,190 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private fun setStatus(text: String) {
         activity?.runOnUiThread {
             Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ============================================================
+    //  In-app update strip (Hsu, 2026-11-08, v1.0.29): the
+    //  Phoenix-VPN update function, adapted for Tugyi. The strip
+    //  shows only when a newer Tugyi release exists, while
+    //  downloading, or on error. One tap on UPDATE downloads the
+    //  arm64 APK in the app (never the browser) and hands it to
+    //  the system installer. A completed download is kept, so an
+    //  install error or cancel never forces a re-download: the
+    //  next UPDATE tap installs the kept file directly.
+    // ============================================================
+
+    /** Check GitHub latest on every open (Phoenix: no throttle).
+     * Shows the strip only when a newer release exists. */
+    private fun checkForUpdate() {
+        if (updatePhase == UpdatePhase.DOWNLOADING ||
+            updatePhase == UpdatePhase.READY
+        ) return
+        // Already showing this version's update: no re-check.
+        if (updatePhase == UpdatePhase.AVAILABLE && latestRelease != null) return
+        updateJob?.cancel()
+        updateJob = runOnDefaultDispatcher {
+            val ctx = activity?.applicationContext ?: return@runOnDefaultDispatcher
+            val info = TugyiUpdateService.fetchLatest(ctx)
+                .getOrNull() ?: return@runOnDefaultDispatcher
+            val installed = TugyiUpdateService.TUGYI_VERSION_TAG.removePrefix("v")
+            if (!TugyiUpdateService.isNewer(info.version, installed)) {
+                return@runOnDefaultDispatcher
+            }
+            latestRelease = info
+            onMainDispatcher {
+                if (updatePhase == UpdatePhase.IDLE ||
+                    updatePhase == UpdatePhase.ERROR
+                ) {
+                    showUpdateAvailable(info)
+                }
+            }
+        }
+    }
+
+    private fun showUpdateAvailable(info: TugyiUpdateService.ReleaseInfo) {
+        if (!::updateStrip.isInitialized) return
+        updatePhase = UpdatePhase.AVAILABLE
+        updateTitleView.text = "v${info.version} update available"
+        updateSubtitleView.text = "App keeps working — update when ready"
+        updateBtn.visibility = View.VISIBLE
+        updateCancelBtn.visibility = View.GONE
+        updateRetryBtn.visibility = View.GONE
+        updateCloseBtn.visibility = View.GONE
+        updateProgressBar.visibility = View.GONE
+        updateStrip.visibility = View.VISIBLE
+    }
+
+    /** UPDATE tap: install a kept download when it matches the
+     * latest release; otherwise download with progress, keep the
+     * completed APK, then hand off to the installer. */
+    private fun startUpdate() {
+        val info = latestRelease ?: return
+        if (updatePhase == UpdatePhase.DOWNLOADING) return
+        updatePhase = UpdatePhase.DOWNLOADING
+        updateTitleView.text = "v${info.version} update available"
+        updateSubtitleView.text = "Downloading… Connecting…"
+        updateBtn.visibility = View.GONE
+        updateCancelBtn.visibility = View.VISIBLE
+        updateRetryBtn.visibility = View.GONE
+        updateCloseBtn.visibility = View.GONE
+        updateProgressBar.visibility = View.VISIBLE
+        updateProgressBar.progress = 0
+        updateJob?.cancel()
+        updateJob = runOnDefaultDispatcher {
+            val app = activity?.applicationContext ?: return@runOnDefaultDispatcher
+            val kept = TugyiUpdateService.keptRecord(app)
+            if (kept != null && kept.version != info.version) {
+                // A kept APK for an older release is dead weight.
+                TugyiUpdateService.deleteKeptApk(app)
+            } else if (kept != null) {
+                val f = File(TugyiUpdateService.updatesDir(app), kept.name)
+                val valid = f.exists() && f.length() == kept.size &&
+                    TugyiUpdateService.sha256(f) == kept.sha256
+                if (valid) {
+                    pendingApk = f
+                    onMainDispatcher { onUpdateReady(f) }
+                    return@runOnDefaultDispatcher
+                }
+                // Corrupt kept file: drop it, fall through to download.
+                TugyiUpdateService.deleteKeptApk(app)
+            }
+            val result = TugyiUpdateService.download(
+                app, info, TugyiUpdateService.updatesDir(app)
+            ) { pct ->
+                activity?.runOnUiThread {
+                    if (updatePhase == UpdatePhase.DOWNLOADING) {
+                        updateSubtitleView.text = "Downloading… $pct%"
+                        updateProgressBar.progress = pct
+                    }
+                }
+            }
+            val file = result.getOrNull()
+            if (file != null) {
+                pendingApk = file
+                val sha = TugyiUpdateService.sha256(file)
+                if (sha != null) {
+                    TugyiUpdateService.saveKeptRecord(
+                        app,
+                        TugyiUpdateService.KeptApk(
+                            info.version, file.name, file.length(), sha
+                        )
+                    )
+                }
+                onMainDispatcher { onUpdateReady(file) }
+            } else {
+                val msg = result.exceptionOrNull()?.message ?: "Download failed"
+                onMainDispatcher { showUpdateError(info, msg) }
+            }
+        }
+    }
+
+    private fun onUpdateReady(file: File) {
+        updatePhase = UpdatePhase.READY
+        if (::updateStrip.isInitialized) updateStrip.visibility = View.GONE
+        installRequest = file
+        launchInstaller(file)
+    }
+
+    private fun showUpdateError(info: TugyiUpdateService.ReleaseInfo, msg: String) {
+        if (!::updateStrip.isInitialized) return
+        updatePhase = UpdatePhase.ERROR
+        updateTitleView.text = "v${info.version} update available"
+        updateSubtitleView.text = msg
+        updateBtn.visibility = View.GONE
+        updateCancelBtn.visibility = View.GONE
+        updateRetryBtn.visibility = View.VISIBLE
+        updateCloseBtn.visibility = View.VISIBLE
+        updateProgressBar.visibility = View.GONE
+        updateStrip.visibility = View.VISIBLE
+    }
+
+    private fun cancelUpdate() {
+        updateJob?.cancel()
+        // A cancelled download leaves only a .tmp partial — drop it.
+        // A completed kept APK is never touched by a cancel.
+        val dir = TugyiUpdateService.updatesDir(requireContext())
+        dir.listFiles()?.forEach {
+            if (it.isFile && it.name.endsWith(".tmp")) it.delete()
+        }
+        val info = latestRelease
+        if (info != null) showUpdateAvailable(info) else closeUpdate()
+    }
+
+    /** Close without recording a dismissal (e.g. after an error). */
+    private fun closeUpdate() {
+        updatePhase = UpdatePhase.IDLE
+        if (::updateStrip.isInitialized) updateStrip.visibility = View.GONE
+    }
+
+    /**
+     * Hand a downloaded update APK to the system installer. If the
+     * one-time "allow installs from this app" grant is missing,
+     * open the system grant screen; the grant callback retries
+     * the install on return.
+     */
+    private fun launchInstaller(file: File) {
+        val context = requireContext()
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            installRequest = file
+            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = Uri.parse("package:" + context.packageName)
+            }
+            installGrant.launch(intent)
+            return
+        }
+        installRequest = null
+        val uri = FileProvider.getUriForFile(
+            context, context.packageName + ".fileprovider", file
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { startActivity(intent) }.onFailure {
+            setStatus("Could not open installer")
+            latestRelease?.let { showUpdateAvailable(it) }
         }
     }
 
