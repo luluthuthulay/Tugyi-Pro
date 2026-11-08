@@ -149,7 +149,10 @@ class MainActivity : ThemedActivity(),
     fun refreshNavMenu(clashApi: Boolean) {
         if (::navigation.isInitialized) {
             navigation.menu.findItem(R.id.nav_traffic)?.isVisible = clashApi
-            navigation.menu.findItem(R.id.nav_tuiguang)?.isVisible = !isPlay
+            // Tugyi Pro (Hsu, 2026-11-08, v1.0.30): Ads stays hidden.
+            // Upstream shows it on non-Play builds (!isPlay), which
+            // re-showed it after the onCreate hide in v1.0.29.
+            navigation.menu.findItem(R.id.nav_tuiguang)?.isVisible = false
         }
     }
 

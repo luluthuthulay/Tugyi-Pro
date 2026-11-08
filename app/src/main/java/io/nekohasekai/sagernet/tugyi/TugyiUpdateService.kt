@@ -41,7 +41,7 @@ object TugyiUpdateService {
      * and the home update strip compare the latest Tugyi-Pro
      * release tag against it. Bump this to the new tag on EVERY
      * release push. */
-    const val TUGYI_VERSION_TAG = "v1.0.29"
+    const val TUGYI_VERSION_TAG = "v1.0.30"
 
     private const val LATEST_URL =
         "https://github.com/luluthuthulay/Tugyi-Pro/releases/latest"
