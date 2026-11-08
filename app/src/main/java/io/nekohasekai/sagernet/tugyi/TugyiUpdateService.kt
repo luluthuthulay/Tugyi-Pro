@@ -41,7 +41,7 @@ object TugyiUpdateService {
      * and the home update strip compare the latest Tugyi-Pro
      * release tag against it. Bump this to the new tag on EVERY
      * release push. */
-    const val TUGYI_VERSION_TAG = "v1.0.30"
+    const val TUGYI_VERSION_TAG = "v1.0.31"
 
     private const val LATEST_URL =
         "https://github.com/luluthuthulay/Tugyi-Pro/releases/latest"
@@ -59,7 +59,7 @@ object TugyiUpdateService {
      * version, so during the window between a GitHub publish and
      * the Lovable link update it would serve the OLD file.
      */
-    private const val LOVABLE_DOWNLOAD_URL = ""
+    private const val LOVABLE_DOWNLOAD_URL = "https://tugyi-pro-download-hub.lovable.app/api/public/apk/tugyi-pro"
 
     private const val TAG = "TugyiUpdate"
 
