@@ -160,6 +160,16 @@ jobs:
       - name: Checkout Library
         run: |
           git submodule update --init 'app/*'
+      - name: Restore Tugyi keystore
+        # Same as the OSS job: the repo's committed
+        # release.keystore is the upstream public one, NOT
+        # the Tugyi keystore, so without this the Play
+        # bundle signing fails with "keystore password was
+        # incorrect" (LOCAL_PROPERTIES carries the Tugyi
+        # passwords). The real keystore lives only in the
+        # KEYSTORE_B64 secret, never in the repo.
+        run: |
+          echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > release.keystore
       - name: Gradle Build
         run: |
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
