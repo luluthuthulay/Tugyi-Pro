@@ -2,6 +2,23 @@
 """
 Tugyi Pro engine v7 (phone-proven pattern filter, per Hsu phone tests 2026-11-05).
 
+v8 changes (2026-11-27, Hsu: HK removed completely, Thai replaces it;
+"Thai, SG, US, JP" are the four countries; AMKT nodes probed
+without the pattern filter; two engine jobs run in parallel):
+- HK is gone from SOURCES and COUNTRY_KEYWORDS; YLT HK nodes (hk3,
+  nw4) now match no country and are dropped. TH is added with the
+  AMKT sheet CSV + raw txt as its only sources.
+- AMKT sheet CSV is parsed with its Country column as fallback;
+  a node's own name/host wins when they disagree (47/48/49 are SG
+  by link name, 55 AISPlay is Thai by its .co.th host), matching
+  how the AMKT app groups them. VMess country comes from the 'ps'
+  remark, since VMess URIs have no '#' fragment.
+- AMKT nodes skip the pattern filter (Hsu saw their ms on his
+  phone) and are probed right after YLT, so big-list nodes cannot
+  crowd them out of MAX_TEST. Other sources keep the v4 filter.
+- main() takes country args, so two workflow jobs can split the
+  countries (A: sg th, B: us jp) and commit once at the end.
+
 v7.1 changes (2026-11-06, Hsu: "put all of it in the repo"):
 - The YLT key is now ALSO committed in the repo as
   engine/ylt-nodes.txt (all 17 nodes, decoded plaintext) and read
@@ -102,6 +119,8 @@ Limits, stated plainly:
 - On any fetch failure, the previous output file is left untouched.
 """
 import base64
+import csv
+import io
 import json
 import os
 import statistics
@@ -133,6 +152,33 @@ def is_ylt_source(source_url):
     the key committed in the repo (engine/ylt-nodes.txt)."""
     return source_url in (YLT_URL, YLT_FILE)
 
+
+# AMKT free nodes (Hsu, 2026-11-27; owner khaingzaw883495-blip, NOT
+# Hsu's app - only the PUBLIC free list is used, never the paid /
+# buyer servers). Two views of the same list: the Google Sheet CSV
+# is the app's real list (46 rows, with a Country column); the raw
+# txt (37 lines) is a subset but holds 2 nodes the sheet lacks
+# (170.205.36.116 SG Reality, 5.253.42.164 US Reality). Both are
+# fetched; identical nodes dedupe by node_identity().
+AMKT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1rJPmAULZqM9M4gICys_EQxUGDGhHmRB2l9DG_xTFR9k/export?format=csv"
+AMKT_TXT_URL = "https://raw.githubusercontent.com/khaingzaw883495-blip/amkt-free/main/amkt-free.txt"
+
+
+def is_amkt_source(source_url):
+    """True for either AMKT free-list source (sheet CSV or raw txt)."""
+    return source_url in (AMKT_SHEET_URL, AMKT_TXT_URL)
+
+
+# Hosts whose AMKT display name carries no country word, routed by
+# the sheet's Country column instead (verified 2026-11-27):
+# 34.215.61.168 = AMKT04 US node (sheet: United States, AWS
+# us-west-2); 18.140.163.191 = AMKT04 SG node (sheet: Singapore,
+# AWS ap-southeast-1, same IP as the "30. Singapore" node).
+AMKT_HOST_COUNTRY = {
+    "34.215.61.168": "us",
+    "18.140.163.191": "sg",
+}
+
 SOURCES = {
     # (url, already_country_specific)
     "sg": [
@@ -144,6 +190,8 @@ SOURCES = {
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
         ("https://gist.githubusercontent.com/cybershieldvpn/d7981da88de440c4ef8ee9271b32eb6f/raw/cybershieldvpn", False),
+        (AMKT_SHEET_URL, False),
+        (AMKT_TXT_URL, False),
     ],
     "jp": [
         ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-JP.txt", True),
@@ -152,6 +200,8 @@ SOURCES = {
         ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
         ("https://gist.githubusercontent.com/cybershieldvpn/d7981da88de440c4ef8ee9271b32eb6f/raw/cybershieldvpn", False),
+        (AMKT_SHEET_URL, False),
+        (AMKT_TXT_URL, False),
     ],
     "us": [
         ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-US.txt", True),
@@ -161,16 +211,16 @@ SOURCES = {
         ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
         ("https://raw.githubusercontent.com/Pawdroid/Free-servers/main/static/sub_en", False),
         ("https://gist.githubusercontent.com/cybershieldvpn/d7981da88de440c4ef8ee9271b32eb6f/raw/cybershieldvpn", False),
+        (AMKT_SHEET_URL, False),
+        (AMKT_TXT_URL, False),
     ],
-    "hk": [
-        ("https://raw.githubusercontent.com/Au1rxx/free-vpn-subscriptions/main/output/by-country/v2ray-base64-HK.txt", True),
-        ("https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Hong_Kong.txt", True),
-        (YLT_URL, False),
-        (YLT_FILE, False),
-        ("https://radarhub.top/v2ray.txt", False),
-        ("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/verified.txt", False),
-        ("https://raw.githubusercontent.com/hamzawih0/zorVPN/main/ZorVPN-nodes.txt", False),
-        ("https://gist.githubusercontent.com/cybershieldvpn/d7981da88de440c4ef8ee9271b32eb6f/raw/cybershieldvpn", False),
+    # TH replaces HK (Hsu, 2026-11-27: "Hk ကို လုံးဂ ဖြုတ်လိုက်မယ်",
+    # "Thai ကို အစားထိုး"). Thai nodes come only from AMKT, so the
+    # AMKT sources are the whole list; other sources have no Thai
+    # entries and are not listed here.
+    "th": [
+        (AMKT_SHEET_URL, False),
+        (AMKT_TXT_URL, False),
     ],
 }
 
@@ -303,27 +353,42 @@ COUNTRY_KEYWORDS = {
     "sg": ["singapore", "🇸🇬", "新加坡"],
     "jp": ["japan", "🇯🇵", "日本", "tokyo", "osaka"],
     "us": ["united states", "🇺🇸", "美国", "usa"],
-    "hk": ["hong kong", "🇭🇰", "香港"],
+    "th": ["thailand", "🇹🇭", "ประเทศไทย"],
 }
 
 
+def vmess_ps(uri):
+    """The 'ps' remark of a vmess:// URI (base64 JSON), lowercased.
+    VMess URIs carry no '#' fragment, so without this their display
+    name is invisible and no country word can ever match them."""
+    if not uri.startswith("vmess://"):
+        return ""
+    try:
+        data = json.loads(b64decode_padded(uri[8:]).decode(errors="ignore"))
+        return str(data.get("ps", "")).lower()
+    except Exception:
+        return ""
+
+
 def node_country_name(uri):
-    """Display name from the URI fragment, URL-decoded, lowercased.
-    unquote_plus is needed because some lists encode spaces as '+'."""
+    """Display name from the URI fragment (or the VMess 'ps' remark),
+    URL-decoded, lowercased. unquote_plus is needed because some
+    lists encode spaces as '+'."""
+    if uri.startswith("vmess://"):
+        return vmess_ps(uri)
     if "#" not in uri:
         return ""
     return urllib.parse.unquote_plus(uri.split("#", 1)[1]).lower()
 
 
 # Host subdomains that carry a region code (YLT hosts look like
-# <uuid>-<group>.sg7.hyhuawei.com). nw4 is Hong Kong: all 5 nw4
-# hosts resolve (DoH, 2026-11-06) to 112.120.123.140, Hong Kong
-# (HKT Limited). The direct-IP YLT node (138.2.73.238) is
-# Singapore (ipinfo, 2026-11-06, Oracle, Kampong Loyang).
+# <uuid>-<group>.sg7.hyhuawei.com). The direct-IP YLT node
+# (138.2.73.238) is Singapore (ipinfo, 2026-11-06, Oracle,
+# Kampong Loyang). HK entries (hk3, nw4) were removed 2026-11-27
+# with the whole HK region; YLT HK nodes now match no country
+# and are dropped, as intended.
 HOST_REGION = {
     "sg7": "sg",
-    "hk3": "hk",
-    "nw4": "hk",
 }
 
 # Direct-IP hosts have no region subdomain; this one is SG by
@@ -346,6 +411,10 @@ def host_region(uri):
             return code
     if host in HOST_IP_REGION:
         return HOST_IP_REGION[host]
+    # .th is Thailand's country domain (e.g. aisplay.ais.co.th,
+    # the AMKT AISPlay node the app shows under Thailand).
+    if host.endswith(".th"):
+        return "th"
     return None
 
 
@@ -355,7 +424,79 @@ def matches_country(uri, code):
     name = node_country_name(uri)
     if not name:
         return False
-    return any(kw in name for kw in COUNTRY_KEYWORDS[code])
+    if any(kw in name for kw in COUNTRY_KEYWORDS[code]):
+        return True
+    # Short region codes as whole words in the display name
+    # (AMKT names them like "30. SG TG@amktvpn", "47. sg 1",
+    # "31. JP TG@amktvpn"). A substring match would false-fire
+    # ("msg" contains "sg"), so only whole tokens count.
+    return code in name.replace(".", " ").split()
+
+
+def amkt_country(uri):
+    """Country of an AMKT free-list node, from its own display name
+    or host - NOT the sheet's Country column, which disagrees with
+    the app in two cases and the app grouping is what Hsu sees on
+    his phone. Returns a code, or None when the node carries no
+    country signal at all (e.g. '57. DtacNOPro' on a CDN host)."""
+    try:
+        host = (urllib.parse.urlparse(uri).hostname or "").lower()
+    except Exception:
+        host = ""
+    if host in AMKT_HOST_COUNTRY:
+        return AMKT_HOST_COUNTRY[host]
+    if host.endswith(".th"):
+        return "th"
+    name = node_country_name(uri)
+    if not name:
+        return None
+    for code, kws in COUNTRY_KEYWORDS.items():
+        if any(kw in name for kw in kws):
+            return code
+    tokens = name.replace(".", " ").split()
+    for code in ("sg", "jp", "us", "th"):
+        if code in tokens:
+            return code
+    return None
+
+
+# Sheet Country column values that map to a Tugyi country. Only
+# the four Tugyi countries are listed; anything else (Canada, UK,
+# Germany, ...) is dropped, as Hsu decided (TH/SG/US/JP only).
+AMKT_SHEET_COUNTRY = {
+    "thailand": "th",
+    "singapore": "sg",
+    "united states": "us",
+    "japan": "jp",
+}
+
+
+def decode_amkt_sheet(text):
+    """Parse the AMKT Google Sheet CSV export into (uri, country)
+    pairs. The node's own name/host wins when it disagrees with
+    the sheet (47/48/49 are 'sg' by name though the sheet says
+    Thailand; 55 is Thai by host though the sheet says Singapore)
+    - that matches how the AMKT app groups them, which is what Hsu
+    sees. The sheet's Country column is only the fallback, e.g.
+    for '57. DtacNOPro', which carries no country signal itself."""
+    items = []
+    try:
+        for row in csv.DictReader(io.StringIO(text)):
+            link = (row.get("Link") or "").strip()
+            if "://" not in link:
+                continue
+            code = amkt_country(link)
+            if code is None:
+                sheet_country = (row.get("Country") or "").strip().lower()
+                code = AMKT_SHEET_COUNTRY.get(sheet_country)
+            if code is None:
+                continue
+            items.append((link, code))
+    except Exception as e:
+        print(f"[amkt sheet] parse failed: {e}", flush=True)
+    return items
+
+
 TEST_URL = "http://www.gstatic.com/generate_204"
 MAX_TEST = int(os.environ.get("TUGYI_MAX_TEST", "100"))
 TOP_N = int(os.environ.get("TUGYI_TOP_N", "10"))
@@ -631,13 +772,23 @@ def run_country(code):
         try:
             print(f"[{code}] fetching {url}", flush=True)
             raw = read_source(url)
-            lines = decode_subscription(raw)
+            if url == AMKT_SHEET_URL:
+                # Sheet CSV: country comes from the parser (own
+                # name/host first, sheet Country column as fallback).
+                items = [(uri, True) for uri, c in decode_amkt_sheet(raw)
+                         if c == code]
+            elif is_amkt_source(url):
+                # Raw txt: country from the node's own name/host.
+                items = [(line, True) for line in decode_subscription(raw)
+                         if amkt_country(line) == code]
+            else:
+                items = [(line, False) for line in decode_subscription(raw)]
         except Exception as e:
             print(f"[{code}] source failed, skipping: {url} ({e})", flush=True)
             continue
         kept = 0
-        for line in lines:
-            if not already_specific and not matches_country(line, code):
+        for line, is_amkt in items:
+            if not is_amkt and not already_specific and not matches_country(line, code):
                 continue
             key = node_identity(line)
             if key is None or key in seen:
@@ -646,14 +797,19 @@ def run_country(code):
             # must send only truly working nodes to the app): drop
             # every node that does not match a phone-proven pattern
             # BEFORE live-testing, so MAX_TEST is not wasted on them.
-            if not is_working_pattern(line, url, code):
+            # EXCEPTION (Hsu, 2026-11-27: TH/SG/US AMKT nodes are
+            # probed WITHOUT the pattern filter - check them all,
+            # take the best): AMKT nodes skip this filter, because
+            # Hsu already saw their ms on his own phone in the AMKT
+            # app. The filter still applies to every other source.
+            if not is_amkt and not is_working_pattern(line, url, code):
                 continue
             if key in BLOCKLIST:
                 continue
             seen.add(key)
             unique.append((line, url))
             kept += 1
-        print(f"[{code}] {url} -> {len(lines)} lines, {kept} pattern-kept", flush=True)
+        print(f"[{code}] {url} -> {len(items)} lines, {kept} kept", flush=True)
     # Trusted families (CyberShield gist, YLT key) are phone-proven
     # from Myanmar as families (Hsu: SS19999 connects, SG VLESS
     # Reality matches the proven pattern; YLT Hy2 "exactly right
@@ -671,7 +827,11 @@ def run_country(code):
     # sits past MAX_TEST in a 1000+ node list.
     # YLT first in the probe set too (v7.2): a long VLESS list must
     # never crowd the phone-proven YLT nodes out of MAX_TEST.
+    # AMKT second (2026-11-27): Hsu saw their ms on his phone, so
+    # they must actually be probed, not crowded out by big-list
+    # nodes either. Final ranking below is still tier-first.
     unique.sort(key=lambda t: (0 if is_ylt_source(t[1]) else 1,
+                               0 if is_amkt_source(t[1]) else 1,
                                pattern_tier(t[0], t[1], code)))
     print(f"[{code}] pattern-unique={len(unique)}", flush=True)
     candidates = [u for u, _src in unique[:MAX_TEST]]
@@ -744,8 +904,24 @@ def is_trusted_family(source_url):
 
 
 def main():
+    # Hsu, 2026-11-27: make the engine faster with two engines.
+    # The workflow runs two jobs in parallel, each passing only its
+    # own countries ("python3 engine/test_nodes.py sg jp"), so the
+    # run takes the slowest job instead of the sum of all countries.
+    # No args still runs every country (old behaviour, local runs).
+    # Unknown codes are skipped with a warning, so a workflow that
+    # lists a country not yet in SOURCES (e.g. "th" before the
+    # Thai source is added) does not fail the whole job.
+    codes = sys.argv[1:] or list(SOURCES)
+    known = []
+    for c in codes:
+        if c in SOURCES:
+            known.append(c)
+        else:
+            print(f"[engine] unknown country, skipping: {c}", flush=True)
+    codes = known
     os.makedirs("output", exist_ok=True)
-    for code in SOURCES:
+    for code in codes:
         try:
             top = run_country(code)
         except Exception as e:
