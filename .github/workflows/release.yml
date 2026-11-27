@@ -38,7 +38,13 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: ^1.25
+          # Pinned to 1.25 (Hsu, 2026-11-27): setup-go ^1.25 resolved
+          # to Go 1.27.4, and Go 1.27 REMOVED the gotypesalias GODEBUG
+          # (go.dev/doc/godebug#go-127), so the gomobile fork's
+          # go.mod line 16 (godebug gotypesalias=0) fails to load
+          # and the whole libcore native build dies in ~2s. Go 1.25
+          # still accepts that GODEBUG. Do NOT float this again.
+          go-version: "1.25"
       - name: Native Build
         if: steps.cache.outputs.cache-hit != 'true'
         run: ./run lib core
