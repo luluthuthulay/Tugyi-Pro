@@ -71,6 +71,18 @@ jobs:
         with:
           path: ~/.gradle
           key: gradle-oss-${{ hashFiles('**/*.gradle.kts') }}
+      - name: Set up JDK 17
+        # Pinned to 17 (Hsu, 2026-11-27): ubuntu-latest is now
+        # Ubuntu 26.04, whose DEFAULT Java is 25, and Gradle
+        # 8.10.2 + Kotlin 2.0.21 cannot run on Java 25 — the
+        # Gradle build dies in config with the bare Java
+        # version as the only error ("What went wrong:
+        # 25.0.5.1"). AGP 8.x requires JDK 17. Do NOT let
+        # this float to the runner default again.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
       - name: Restore Tugyi keystore
         # Tugyi keystore is NOT committed to the repo (anyone with it
         # could sign as Tugyi Pro). It lives in the KEYSTORE_B64 secret.
@@ -137,6 +149,14 @@ jobs:
         with:
           path: ~/.gradle
           key: gradle-play-${{ hashFiles('**/*.gradle.kts') }}
+      - name: Set up JDK 17
+        # Same Java 25 pin as the OSS job (see above):
+        # ubuntu-latest 26.04 defaults to Java 25, which
+        # Gradle 8.10.2 + Kotlin 2.0.21 cannot run on.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
       - name: Checkout Library
         run: |
           git submodule update --init 'app/*'
@@ -147,7 +167,7 @@ jobs:
           export LOCAL_PROPERTIES="${{ secrets.LOCAL_PROPERTIES }}"
           ./run init action gradle
           ./gradlew bundlePlayRelease
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: AAB
           path: app/build/outputs/bundle/playRelease/app-play-release.aab
