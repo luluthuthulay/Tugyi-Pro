@@ -300,9 +300,17 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
         // This never touches a live tunnel (see TugyiAutoPull).
         TugyiAutoPull.checkNow()
         TugyiAutoPull.startWhileOpen()
-        // Background ping-check of the lists already in the app.
+        // Background ping-check on open (Hsu, 2026-11-27: first open
+        // was far too slow). Old behaviour tested ALL 4 countries
+        // at once on every open (40 sing-box tests), so the selected
+        // country's check queued behind 30 tests the user did not
+        // need yet. New behaviour: only the selected country is
+        // tested on open. Other countries are tested when the user
+        // switches to them (onCountryTapped / switchRegion force a
+        // test) or when AutoPull finds a new list for them, and a
+        // ranking under 30 minutes old is reused on switch.
         // Idle only, n/a dropped, ms kept lowest-ping first.
-        TugyiPing.testAllAsync()
+        // (TugyiPing.testAllAsync stays for a manual full refresh.)
         // In-app update (Hsu, 2026-11-08, v1.0.29): check GitHub
         // latest on every open; the strip shows only when a newer
         // Tugyi release exists.
@@ -930,6 +938,11 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                 } else {
                     ++session
                     SagerNet.stopService()
+                    // Emergency (Hsu, 2026-11-27 22:05): the tunnel
+                    // was live, every node in this country is now
+                    // down - wake the engine NOW for fresh nodes,
+                    // bypassing the normal 30-minute rule.
+                    TugyiEngineRefresh.wakeEngineEmergency(country)
                     onMainDispatcher {
                         setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
                         setStatus("${country.code}: no live node")
@@ -1074,9 +1087,21 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
     private fun isPingReady(country: TugyiCountry): Boolean {
         if (TugyiPing.connectedCountry() == country) return true
         if (TugyiEngine.profileIds(country).isEmpty()) return true
-        // Hsu, 2026-11-06: while the ping is running, VPN must NOT
-        // connect - even when an old ranking is still fresh, the
-        // new check has to finish first.
+        // Cached-best-first (Hsu, 2026-11-27: took all the Pro
+        // advice, Hiddify's selected-first + cached-result rule):
+        // a FRESH ranking (< 30 min) with a live node is proof
+        // enough to connect NOW, even while a background re-test
+        // is running - the re-test only refreshes the ranking for
+        // next time. This narrows the 2026-11-06 no-connect-while-
+        // pinging rule: it still applies when there is NO ranking
+        // or the ranking is stale, so the app never connects to
+        // an untested node. It does NOT apply to a ranking that
+        // was proven live minutes ago.
+        if (TugyiPing.isRankingFresh(country) &&
+            TugyiPing.rankedIds(country).isNotEmpty()) return true
+        // Hsu, 2026-11-06 (narrowed 2026-11-27, see above): with
+        // NO ranking, or a stale one, VPN must NOT connect while
+        // the ping is running - the new check has to finish first.
         if (TugyiPing.isTesting(country)) return false
         return TugyiPing.isRankingFresh(country)
     }
@@ -1302,6 +1327,10 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                             connectToOrder(country, order, index + 1, mySession)
                         } else {
                             SagerNet.stopService()
+                            // Emergency: all 5 tried nodes connected
+                            // but carried no traffic - the country
+                            // is down, wake the engine now.
+                            TugyiEngineRefresh.wakeEngineEmergency(country)
                             onMainDispatcher {
                                 setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
                                 setStatus("${country.code}: no live node")
@@ -1327,6 +1356,9 @@ class TugyiHomeFragment : ToolbarFragment(R.layout.tugyi_home) {
                         onMainDispatcher { setStatus("${country.code}: trying next node…") }
                         connectToOrder(country, order, index + 1, mySession)
                     } else {
+                        // Emergency: all 5 tried nodes broke - the
+                        // country is down, wake the engine now.
+                        TugyiEngineRefresh.wakeEngineEmergency(country)
                         onMainDispatcher {
                             setConnStatus("Disconnected", Color.parseColor("#D32F2F"))
                             setStatus("${country.code}: no live node")

@@ -23,7 +23,8 @@ import kotlinx.coroutines.sync.withPermit
  * if it breaks, the fragment tries the next lowest-ping node.
  *
  * How it works, using NekoBox's own UrlTest (the same test the
- * Configuration screen uses, sing-box URL test, 5s timeout):
+ * Configuration screen uses, sing-box URL test, 3s timeout for
+ * Tugyi since 2026-11-27, 5s NekoBox default elsewhere):
  * - YES, it can also test while a tunnel is live, without touching
  *   the tunnel (Hsu, 2026-11-05 13:54): UrlTest builds a SEPARATE
  *   sing-box instance with forTest=true, which has NO tun-in inbound,
@@ -63,6 +64,25 @@ object TugyiPing {
      * A new list is still tested immediately (force = true), and the
      * app open forces a fresh test of the selected country every
      * time (Hsu, 2026-11-06: "App ဖွင့်တိုင်း စစ်ရမှာ"). */
+
+    /** Ping timeout for the Tugyi check (Hsu, 2026-11-27: make the
+     * app fast on first open, 10 at a time, 3s). A dead node used to
+     * block its slot for the full 5s NekoBox default; at 3s a dead
+     * node is dropped 2s sooner and a 10-node country finishes in
+     * ~3s worst case instead of ~5s. Live nodes answer in well
+     * under 1s either way, so the shorter timeout does not change
+     * which live node wins. The Configuration screen keeps the
+     * NekoBox 5s default (UrlTest() with no argument). */
+    private const val TUGYI_PING_TIMEOUT_MS = 3000
+
+    /** Switch tolerance (Hsu, 2026-11-27: took all the Pro advice -
+     * Hiddify / sing-box urltest / Mihomo all use 50 ms). A
+     * challenger must beat the incumbent best by MORE than 50 ms
+     * to take the #1 spot, or the "best" flaps between two
+     * near-equal nodes on every run. Judged on the current test's
+     * own ping values, never on a stale ms. */
+    private const val TOLERANCE_MS = 50
+
     private const val MIN_RETEST_MS = 30 * 60 * 1000L
 
     private val testing = mutableSetOf<String>()
@@ -132,7 +152,7 @@ object TugyiPing {
         }
     }
 
-    /** Fire-and-forget background test for all three countries. */
+    /** Fire-and-forget background test for all countries. */
     fun testAllAsync(force: Boolean = false) {
         for (country in TugyiCountry.all()) testCountryAsync(country, force)
     }
@@ -154,7 +174,7 @@ object TugyiPing {
                 async {
                     semaphore.withPermit {
                         try {
-                            val ms = UrlTest().doTest(profile)
+                            val ms = UrlTest(TUGYI_PING_TIMEOUT_MS).doTest(profile)
                             profile.status = if (ms > 0) 1 else 3
                             profile.ping = if (ms > 0) ms else 0
                         } catch (e: Exception) {
@@ -173,11 +193,29 @@ object TugyiPing {
         } catch (e: Exception) {
             Logs.d("Tugyi ping save failed: ${e.message}")
         }
-        val ranked = results
+        val live = results
             .filter { it.ping > 0 }
             .sortedBy { it.ping }
-            .map { it.id }
+        var ranked = live.map { it.id }
+        // 50 ms tolerance (see TOLERANCE_MS): the incumbent best
+        // (previous ranking's #1) keeps the spot unless the new
+        // fastest beats it by MORE than 50 ms in THIS test.
+        val previousBest = rankedIds(country).firstOrNull()
+        if (previousBest != null && ranked.isNotEmpty() && ranked[0] != previousBest) {
+            val pingById = live.associate { it.id to it.ping }
+            val bestPing = pingById[ranked[0]]
+            val incumbentPing = pingById[previousBest]
+            if (bestPing != null && incumbentPing != null &&
+                bestPing + TOLERANCE_MS > incumbentPing) {
+                ranked = listOf(previousBest) + ranked.filter { it != previousBest }
+            }
+        }
         saveRanking(country, ranked)
         Logs.d("Tugyi ping ${country.code}: ${ranked.size}/${results.size} live")
+        // All-down / very-slow: wake the engine NOW so it searches
+        // for fresh nodes instead of waiting for the 6-hour run
+        // (Hsu, 2026-11-27). Best ms is the ranking's #1 ping.
+        val bestMs = live.firstOrNull()?.ping
+        TugyiEngineRefresh.maybeWakeEngine(country, bestMs, ranked.size)
     }
 }

@@ -10,10 +10,10 @@ package io.nekohasekai.sagernet.tugyi
  *
  * Home shows ONLY these regions. No node list, no IPs on home.
  * Live files are published by the GitHub engine in the Tugyi-Pro repo
- * (output/sg.txt, output/jp.txt, output/us.txt, output/hk.txt),
+ * (output/th.txt, output/sg.txt, output/jp.txt, output/us.txt),
  * already ranked by median HTTP-over-proxy latency with dead nodes
- * removed. HK added 2026-11-05 (Hsu's YLT notes: 4 HK Hysteria2
- * nodes work from Myanmar; Hong Kong is near Myanmar like SG/JP).
+ * removed. TH replaces HK 2026-11-27 (Hsu: "Hk ကို လုံးဂ ဖြုတ်လိုက်မယ်",
+ * "Thai ကို အစားထိုး" - the four countries are TH/SG/US/JP).
  * The phone only downloads these small files; it does not
  * bulk-test hundreds of nodes itself.
  */
@@ -31,7 +31,7 @@ enum class TugyiCountry(
 ) {
     SG("SG", "SG", "sg.txt", "Singapore", "🇸🇬", 103.85, 1.29),
     JP("JP", "JP", "jp.txt", "Japan", "🇯🇵", 139.75, 35.68),
-    HK("HK", "HK", "hk.txt", "Hong Kong", "🇭🇰", 114.17, 22.32),
+    TH("TH", "TH", "th.txt", "Thailand", "🇹🇭", 100.5, 13.75),
     US("US", "US", "us.txt", "United States", "🇺🇸", -98.0, 39.0);
 
     companion object {

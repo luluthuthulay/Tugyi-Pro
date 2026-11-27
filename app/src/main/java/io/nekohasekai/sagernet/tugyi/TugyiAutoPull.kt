@@ -13,8 +13,8 @@ import java.util.concurrent.TimeUnit
 /**
  * Tugyi Pro auto-pull.
  *
- * - On app open, and while the app is open, check the three small GitHub
- *   live files (output/sg.txt, jp.txt, us.txt).
+ * - On app open, and while the app is open, check the four small GitHub
+ *   live files (output/th.txt, sg.txt, jp.txt, us.txt).
  * - Download only if the content hash changed, to save mobile data.
  * - Silent: no dialog, no toast on success or on failure.
  * - Never affects a live tunnel: if connected, a changed list is only
